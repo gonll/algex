@@ -138,6 +138,22 @@ This codec targets engineers working with data sources that use shift-register l
 
 ---
 
+## Installation
+
+```bash
+npm install pade-compress
+```
+
+This package includes a native C addon (the GF(2⁸) arithmetic and Berlekamp-Massey core). `npm install` will compile it automatically. You need:
+
+- **macOS**: Xcode Command Line Tools — `xcode-select --install`
+- **Linux**: `build-essential` — `sudo apt install build-essential` (Debian/Ubuntu) or equivalent
+- **Windows**: [windows-build-tools](https://github.com/felixrieseberg/windows-build-tools) or Visual Studio with C++ workload
+
+Node.js ≥ 18 required.
+
+---
+
 ## Usage
 
 ```bash

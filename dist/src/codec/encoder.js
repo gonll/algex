@@ -252,12 +252,14 @@ const encodeChunkCore = (chunk) => {
 const encodeChunkInner = (chunk) => {
     const seq = (0, buffer_1.toSeq)(chunk);
     const rSize = rawSize(chunk.length);
-    const lfsr16 = tryLFSR16(chunk);
-    if (lfsr16)
-        return lfsr16;
+    // GF(2^8) paths first — preferred for byte-structured data (firmware, PRBS streams).
+    // GF(2^16) is a fallback for word-level recurrences (ADC/DAC, 16-bit samples).
     const lfsr = searchLFSR(chunk, seq);
     if (lfsr)
         return lfsr;
+    const lfsr16 = tryLFSR16(chunk);
+    if (lfsr16)
+        return lfsr16;
     const affineResult = tryAffine(chunk, seq);
     if (affineResult)
         return { kind: "affine", k: affineResult.k, inner: affineResult.inner, originalLength: chunk.length };

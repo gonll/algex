@@ -1,12 +1,54 @@
 {
   "name": "pade-compress",
-  "version": "0.1.0",
-  "description": "Math-based compression via Berlekamp-Massey / Padé approximants over GF(2⁸)",
+  "version": "0.1.1",
+  "description": "Algebraic compressor for GF(2⁸) linear recurrences — Berlekamp-Massey + LFSR encoding for PRBS streams, firmware, and telecom payloads",
+  "author": "Gonzalo Herrera Llobeta <gonzalo@builder.io>",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gonll/algex.git"
+  },
+  "keywords": [
+    "compression",
+    "gf256",
+    "galois-field",
+    "berlekamp-massey",
+    "lfsr",
+    "prbs",
+    "algebraic",
+    "codec",
+    "telecom",
+    "firmware"
+  ],
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
+  "bin": {
+    "pade-compress": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src/",
+    "dist/examples/",
+    "c/",
+    "binding.gyp",
+    "build/Release/pade_compress_addon.node",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "build": "tsc && make -C c -s",
     "build:addon": "node-gyp configure && node-gyp build",
     "build:addon:debug": "node-gyp configure && node-gyp build --debug",
     "rebuild:addon": "node-gyp rebuild",
+    "install": "node-gyp rebuild",
     "compress": "tsx src/cli.ts compress",
     "decompress": "tsx src/cli.ts decompress",
     "analyze": "tsx src/cli.ts analyze",
@@ -14,11 +56,14 @@
     "bench": "tsx src/cli.ts bench",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:file": "npm run compress ./test/gf-structured.bin ./test/gf-structured-compressed.bin && npm run decompress ./test/gf-structured-compressed.bin ./test/gf-structured-result.bin && c/gf-analyze ./test/gf-structured.bin"
+    "test:file": "npm run compress ./test/gf-structured.bin ./test/gf-structured-compressed.bin && npm run decompress ./test/gf-structured-compressed.bin ./test/gf-structured-result.bin && c/gf-analyze ./test/gf-structured.bin",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "node-gyp": "^12.3.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "node-gyp": "^12.3.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
     "vitest": "^1.4.0"

@@ -1,0 +1,26 @@
+# Test files in dist
+dist/src/codec/chunker.test.js
+dist/src/codec/chunker.test.d.ts
+dist/src/codec/property.test.js
+dist/src/codec/property.test.d.ts
+dist/src/codec/roundtrip.test.js
+dist/src/codec/roundtrip.test.d.ts
+dist/src/core/berlekamp-massey.test.js
+dist/src/core/berlekamp-massey.test.d.ts
+dist/src/core/gf-poly.test.js
+dist/src/core/gf-poly.test.d.ts
+dist/src/core/pade.test.js
+dist/src/core/pade.test.d.ts
+dist/src/core/transform.test.js
+dist/src/core/transform.test.d.ts
+dist/src/utils/sparse.test.js
+dist/src/utils/sparse.test.d.ts
+
+# C build artifacts
+c/*.o
+c/*.d
+c/gf-analyze
+c/Makefile.wasm
+
+# Patent documents
+patent/
