@@ -1,0 +1,14 @@
+import { encode, encodeAsync } from "./codec/encoder";
+import { decode } from "./codec/decoder";
+import { serialize, deserialize } from "./codec/format";
+export declare const compress: (input: Uint8Array) => Uint8Array;
+export declare const decompress: (input: Uint8Array) => Uint8Array;
+export type ProgressCallback = (done: number, total: number) => void;
+export declare const compressAsync: (input: Uint8Array, workers?: number, onProgress?: ProgressCallback) => Promise<Uint8Array>;
+export { encode, encodeAsync, decode, serialize, deserialize };
+export { streamDeserialize, readChunkAt } from "./codec/format";
+export { createCompressStream, createDecompressStream } from "./codec/stream";
+export { analyzeBuffer, formatAnalysis, toJSON, shouldCompress } from "./core/analysis";
+export { WorkerPool } from "./codec/worker-pool";
+export type { CompressedFile, Chunk, LFSR } from "./types";
+export type { AnalysisResult, SegmentInfo } from "./core/analysis";

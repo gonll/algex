@@ -1,0 +1,24 @@
+# Requires: emcc (Emscripten SDK). Install: https://emscripten.org/docs/getting_started/downloads.html
+# Usage: make -f c/Makefile.wasm
+
+EMCC    = emcc
+CFLAGS  = -O2 -std=c99
+EXPORTS = '["_analyze_buffer","_print_analysis_json","_gf256_init","malloc","free"]'
+OUT_DIR = dist/wasm
+
+SRCS = c/gf256.c c/bm.c c/analyze.c
+
+$(OUT_DIR)/analyzer.js: $(SRCS) | $(OUT_DIR)
+	$(EMCC) $(CFLAGS) $(SRCS) \
+		-s EXPORTED_FUNCTIONS=$(EXPORTS) \
+		-s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"]' \
+		-s ALLOW_MEMORY_GROWTH=1 \
+		-s MODULARIZE=1 \
+		-s EXPORT_NAME='createAnalyzerModule' \
+		-o $@
+
+$(OUT_DIR):
+	mkdir -p $(OUT_DIR)
+
+clean:
+	rm -rf $(OUT_DIR)

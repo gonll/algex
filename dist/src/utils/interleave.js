@@ -1,0 +1,24 @@
+"use strict";
+// Byte-lane interleave: split into m lanes and merge back.
+// Lane j contains bytes x[j], x[j+m], x[j+2m], ...
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.mergeInterleave = exports.splitInterleave = void 0;
+const splitInterleave = (x, m) => Array.from({ length: m }, (_, j) => {
+    const len = Math.ceil((x.length - j) / m);
+    const lane = new Uint8Array(Math.max(len, 0));
+    for (let i = 0, k = j; k < x.length; i++, k += m)
+        lane[i] = x[k];
+    return lane;
+});
+exports.splitInterleave = splitInterleave;
+const mergeInterleave = (lanes, m) => {
+    const totalLen = lanes.reduce((s, l) => s + l.length, 0);
+    const out = new Uint8Array(totalLen);
+    for (let j = 0; j < m; j++) {
+        const lane = lanes[j];
+        for (let i = 0; i < lane.length; i++)
+            out[j + i * m] = lane[i];
+    }
+    return out;
+};
+exports.mergeInterleave = mergeInterleave;

@@ -1,0 +1,26 @@
+{
+  "name": "pade-compress",
+  "version": "0.1.0",
+  "description": "Math-based compression via Berlekamp-Massey / Padé approximants over GF(2⁸)",
+  "scripts": {
+    "build": "tsc && make -C c -s",
+    "build:addon": "node-gyp configure && node-gyp build",
+    "build:addon:debug": "node-gyp configure && node-gyp build --debug",
+    "rebuild:addon": "node-gyp rebuild",
+    "compress": "tsx src/cli.ts compress",
+    "decompress": "tsx src/cli.ts decompress",
+    "analyze": "tsx src/cli.ts analyze",
+    "analyze:c": "c/gf-analyze",
+    "bench": "tsx src/cli.ts bench",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:file": "npm run compress ./test/gf-structured.bin ./test/gf-structured-compressed.bin && npm run decompress ./test/gf-structured-compressed.bin ./test/gf-structured-result.bin && c/gf-analyze ./test/gf-structured.bin"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "node-gyp": "^12.3.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

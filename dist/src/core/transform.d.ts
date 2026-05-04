@@ -1,0 +1,20 @@
+export type Bits = number;
+export declare const huffmanEstimate: (x: Uint8Array) => Bits;
+export declare const rawCost: (x: Uint8Array) => Bits;
+export declare const baselineCost: (x: Uint8Array) => Bits;
+export declare const algebraicityScore: (x: Uint8Array, probe?: number) => number;
+export declare const shouldTryTransforms: (x: Uint8Array) => boolean;
+export declare const DELTA_XOR1_ID = 3;
+export declare const DELTA_ADD1_ID = 4;
+export declare const DELTA_XOR2_ID = 5;
+export declare const deltaXor1Apply: (x: Uint8Array) => Uint8Array;
+export declare const deltaXor1Invert: (x: Uint8Array) => Uint8Array;
+export declare const deltaAdd1Apply: (x: Uint8Array) => Uint8Array;
+export declare const deltaAdd1Invert: (x: Uint8Array) => Uint8Array;
+export declare const deltaXor2Apply: (x: Uint8Array) => Uint8Array;
+export declare const deltaXor2Invert: (x: Uint8Array) => Uint8Array;
+export declare const DELTA_TRANSFORMS: ReadonlyArray<{
+    readonly id: number;
+    readonly apply: (x: Uint8Array) => Uint8Array;
+    readonly invert: (x: Uint8Array) => Uint8Array;
+}>;
