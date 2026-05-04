@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Patent documents (kept private, not part of the public repo)
+patent/
+
+# Misc
+*.DS_Store
