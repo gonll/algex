@@ -10,3 +10,7 @@ patent/
 
 # Misc
 *.DS_Store
+
+# Claude / Cowork
+CLAUDE.md
+.claude/
