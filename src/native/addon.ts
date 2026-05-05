@@ -18,4 +18,19 @@ interface NativeAddon {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-export const addon = require("../../build/Release/pade_compress_addon") as NativeAddon
+function loadAddon(): NativeAddon {
+  // When bundled with pkg, native .node files can't live inside the snapshot.
+  // Convention: ship pade_compress_addon.node alongside the executable.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if ((process as any).pkg !== undefined) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path") as typeof import("path")
+    const sidecar = path.join(path.dirname(process.execPath), "pade_compress_addon.node")
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require(sidecar) as NativeAddon
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("../../build/Release/pade_compress_addon") as NativeAddon
+}
+
+export const addon = loadAddon()

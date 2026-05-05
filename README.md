@@ -138,7 +138,34 @@ This codec targets engineers working with data sources that use shift-register l
 
 ---
 
-## Installation
+## Pre-built executables
+
+No Node.js required. Download the archive for your platform from the [GitHub Releases](https://github.com/gonll/algex/releases) page:
+
+| Platform | Archive |
+|---|---|
+| Windows x64 | `pade-compress-windows-x64.zip` |
+| Linux x64 | `pade-compress-linux-x64.tar.gz` |
+| macOS ARM64 | `pade-compress-macos-arm64.tar.gz` |
+
+Each archive contains two files that **must stay in the same directory**:
+
+- `pade-compress` (or `pade-compress.exe` on Windows) — self-contained executable
+- `pade_compress_addon.node` — native GF/BM library, loaded at runtime as a sidecar
+
+```bash
+# Windows
+.\pade-compress.exe analyze your-prbs-stream.bin
+
+# Linux / macOS
+./pade-compress analyze your-prbs-stream.bin
+```
+
+Releases are built automatically by GitHub Actions on every `v*` tag across all three platforms.
+
+---
+
+## Installation (Node.js / npm)
 
 ```bash
 npm install pade-compress
@@ -316,11 +343,24 @@ examples/
 ## Development
 
 ```bash
-npm run build                          # TypeScript compile
+npm run build                          # TypeScript compile + native addon
 npm test                               # 121 unit tests across 7 test files
 npm run demo                           # Synthetic roundtrip demo
 npx tsx src/cli.ts bench <file>        # Benchmark any file
 npx tsx src/cli.ts analyze <file>      # Algebraic structure report
+npm run build:exe                      # Build a self-contained executable for the current platform
 ```
+
+### Building executables locally
+
+`npm run build:exe` compiles TypeScript, rebuilds the native addon, and bundles the CLI into a single executable via [`@yao-pkg/pkg`](https://github.com/yao-pkg/pkg). The resulting binary + `pade_compress_addon.node` sidecar land in `executables/`. Both files are required together.
+
+To produce all three platform targets from a single machine you need to cross-compile the native addon (non-trivial). The recommended path is to push a `v*` tag and let GitHub Actions build each platform natively:
+
+```bash
+git tag v0.1.2 && git push origin v0.1.2
+```
+
+This triggers `.github/workflows/release.yml`, which builds on `windows-latest`, `ubuntu-latest`, and `macos-latest` and publishes all three archives to the GitHub release automatically.
 
 121 tests across 7 test files covering sparse encoding, Padé search (via C addon), GF polynomial round-trips, approximate LFSR detection (L=1..5), chunking with boundary refinement, dual pre-gate (entropy + algebraicity), and end-to-end roundtrips.

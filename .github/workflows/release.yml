@@ -1,0 +1,125 @@
+name: Release Executables
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag (e.g. v0.1.2)"
+        required: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: node20-win-x64
+            addon: pade_compress_addon.node
+            exe: pade-compress.exe
+            archive: pade-compress-windows-x64.zip
+            archive_cmd: zip
+
+          - os: ubuntu-latest
+            target: node20-linux-x64
+            addon: pade_compress_addon.node
+            exe: pade-compress
+            archive: pade-compress-linux-x64.tar.gz
+            archive_cmd: tar
+
+          - os: macos-latest
+            target: node20-macos-arm64
+            addon: pade_compress_addon.node
+            exe: pade-compress
+            archive: pade-compress-macos-arm64.tar.gz
+            archive_cmd: tar
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Python (for node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Windows: ensure MSVC build tools are available
+      - name: Install Windows build tools
+        if: runner.os == 'Windows'
+        run: npm install --global --production windows-build-tools
+        continue-on-error: true  # Pre-installed on windows-latest runners
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build TypeScript
+        run: npx tsc
+
+      - name: Rebuild native addon
+        run: npx node-gyp rebuild
+
+      - name: Bundle executable with pkg
+        run: >
+          npx @yao-pkg/pkg dist/src/cli.js
+          --target ${{ matrix.target }}
+          --output ${{ matrix.exe }}
+          --no-bytecode
+          --public
+
+      # pkg can't bundle .node files — ship it as a sidecar next to the exe
+      - name: Copy native addon sidecar
+        shell: bash
+        run: cp build/Release/pade_compress_addon.node ${{ matrix.addon }}
+
+      # --- Archive ---
+      - name: Create zip (Windows)
+        if: matrix.archive_cmd == 'zip'
+        shell: pwsh
+        run: Compress-Archive -Path ${{ matrix.exe }},${{ matrix.addon }} -DestinationPath ${{ matrix.archive }}
+
+      - name: Create tarball (Linux/macOS)
+        if: matrix.archive_cmd == 'tar'
+        run: tar -czf ${{ matrix.archive }} ${{ matrix.exe }} ${{ matrix.addon }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish a release when triggered by a version tag
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag != ''
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          name: ${{ github.ref_name || github.event.inputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            pade-compress-windows-x64.zip
+            pade-compress-linux-x64.tar.gz
+            pade-compress-macos-arm64.tar.gz
