@@ -12,7 +12,7 @@
 //   14. Bitplane (high-entropy gate, BM pre-screen per plane)
 //   15. Raw passthrough
 
-import { Chunk, SimpleChunk, LaneChunk, LFSRChunk, RawChunk, CyclicChunk, ApproxCyclicChunk, CompressedFile, GFElem, LFSR, LFSR16Chunk, NonDeltaChunk, AffineChunk, DeltaChunk, InterleaveChunk, BitplaneChunk } from "../types"
+import { Chunk, SimpleChunk, LaneChunk, LFSRChunk, RawChunk, CyclicChunk, ApproxCyclicChunk, CompressedFile, GFElem, LFSR, LFSR16Chunk, NonDeltaChunk, AffineChunk, DeltaChunk, InterleaveChunk, BitplaneChunk, SwitchingLFSRChunk } from "../types"
 import { toSeq, fromSeq, xorBytes } from "../utils/buffer"
 import { isCompressible } from "../core/entropy"
 import { findBestPade, findApproxL1, findApproxL2, findApproxL3, findApproxL4, findApproxL5, findApproxAffineL1, refinedSize } from "../core/pade"
@@ -21,10 +21,11 @@ import { findApproxCyclic } from "../core/cyclic"
 import { packedResidualSize } from "../utils/sparse"
 import { splitInterleave } from "../utils/interleave"
 import { splitBitplanes } from "../core/bitplane"
-import { adaptiveChunks } from "./chunker"
+import { adaptiveChunkGroups } from "./chunker"
 import { serializeChunk, deserializeChunk } from "./format"
 import { addon } from "../native/addon"
-import { EncodeCandidate, pickBest } from "./candidates"
+import { EncodeCandidate, pickBest, realSize } from "./candidates"
+import { SearchBudget, DEFAULT_BUDGET } from "./search-budget"
 
 const runLFSR = (lfsr: LFSR, init: GFElem[], n: number): GFElem[] =>
   Array.from(addon.lfsrRun(lfsr.coeffs, Buffer.from(init), n))
@@ -218,7 +219,7 @@ const APPROX_FINDERS: ReadonlyArray<{
 // avoids ~5 extra native searches per chunk for the common clean-LFSR case.
 const MAX_APPROX_L = 5
 
-const searchLFSRCandidates = (chunk: Uint8Array, seq: GFElem[]): EncodeCandidate[] => {
+const searchLFSRCandidates = (chunk: Uint8Array, seq: GFElem[], budget: SearchBudget): EncodeCandidate[] => {
   const candidates: EncodeCandidate[] = []
 
   const { offset, lfsr, init } = findBestPade(seq)
@@ -231,7 +232,9 @@ const searchLFSRCandidates = (chunk: Uint8Array, seq: GFElem[]): EncodeCandidate
     }
   }
 
-  for (const { label, L, find } of APPROX_FINDERS) {
+  // Budget-bounded: maxModelSolves caps how many approximate orders get tried
+  // (fast mode tries only L=1..2; balanced/max try the full L=1..5 ladder).
+  for (const { label, L, find } of APPROX_FINDERS.slice(0, budget.maxModelSolves)) {
     const candidate = encodeApproxWithOffset(sub => { const r = find(sub); return r ? withDenoise(r, sub) : null }, seq, chunk, L)
     if (candidate) candidates.push({ chunk: candidate, estimatedSize: estimateSimpleBytes(candidate), label })
   }
@@ -276,7 +279,7 @@ const tryLFSR16 = (chunk: Uint8Array): LFSR16Chunk | null => {
 // wrapper overhead is already accounted for by the caller. Collects every
 // candidate that beats raw by cheap estimate and picks the smallest by actual
 // serialized size (Priority 1) instead of the first one found.
-const encodeChunkCore = (chunk: Uint8Array): SimpleChunk => {
+const encodeChunkCore = (chunk: Uint8Array, budget: SearchBudget = DEFAULT_BUDGET): SimpleChunk => {
   const seq   = toSeq(chunk)
   const rSize = rawSize(chunk.length)
 
@@ -284,7 +287,8 @@ const encodeChunkCore = (chunk: Uint8Array): SimpleChunk => {
     { chunk: { kind: "raw", data: chunk } satisfies RawChunk, estimatedSize: rSize, label: "raw" },
   ]
 
-  candidates.push(...searchLFSRCandidates(chunk, seq))
+  const lfsrCandidates = searchLFSRCandidates(chunk, seq, budget)
+  candidates.push(...lfsrCandidates)
 
   const cycle = detectCyclic(seq)
   if (cycle !== null) {
@@ -292,11 +296,21 @@ const encodeChunkCore = (chunk: Uint8Array): SimpleChunk => {
     if (est < rSize)
       candidates.push({ chunk: { kind: "cyclic", cycle, originalLength: chunk.length } satisfies CyclicChunk, estimatedSize: est, label: "cyclic" })
   } else {
-    const approxCyclic = approxCyclicCandidate(chunk, rSize)
-    if (approxCyclic) candidates.push(approxCyclic)
+    // Roadmap 2, Priority 8 (profiling): findApproxCyclic's bounded period
+    // sweep is the single largest JS hotspot in the whole encoder. An "exact"
+    // LFSR candidate always has zero residual by construction (Berlekamp-
+    // Massey), so a tight one (small relative to raw) is already a strong,
+    // near-optimal fit that periodicity-plus-noise is very unlikely to beat —
+    // skip the expensive sweep rather than pay for a comparison that
+    // essentially never wins.
+    const hasCleanExactFit = lfsrCandidates.some(c => c.label === "exact" && c.estimatedSize < rSize * 0.2)
+    if (!hasCleanExactFit) {
+      const approxCyclic = approxCyclicCandidate(chunk, rSize)
+      if (approxCyclic) candidates.push(approxCyclic)
+    }
   }
 
-  return pickBest(candidates) as SimpleChunk
+  return pickBest(candidates, budget.maxExpensiveCandidates, "core") as SimpleChunk
 }
 
 // ── encodeLane: lane/plane encoder with one optional delta wrap (Priority 6) ──
@@ -306,19 +320,21 @@ const encodeChunkCore = (chunk: Uint8Array): SimpleChunk => {
 // Bounded to depth 1 beyond encodeChunkCore (a lane's delta always wraps a
 // SimpleChunk, never a further nested interleave/bitplane/affine), using the
 // same actual-size candidate competition as encodeChunk's top-level delta wrap.
-const encodeLane = (chunk: Uint8Array): LaneChunk => {
-  const core  = encodeChunkCore(chunk)
+const encodeLane = (chunk: Uint8Array, budget: SearchBudget, depth: number): LaneChunk => {
+  const core  = encodeChunkCore(chunk, budget)
   const rSize = rawSize(chunk.length)
 
   const candidates: EncodeCandidate[] = [
     { chunk: core, estimatedSize: core.kind === "raw" ? rSize : estimateSimpleBytes(core), label: "lane-core" },
   ]
 
-  if (shouldTryTransforms(chunk)) {
+  // `depth` already counts the interleave/bitplane level the caller is inside;
+  // the delta wrap would add one more level on top of that.
+  if (depth + 1 <= budget.maxTransformDepth && shouldTryTransforms(chunk)) {
     const DELTA_OVERHEAD = 10
     for (const dt of DELTA_TRANSFORMS) {
       const transformed = dt.apply(chunk)
-      const inner = encodeChunkCore(transformed)
+      const inner = encodeChunkCore(transformed, budget)
       if (inner.kind === "raw") continue
       const est = DELTA_OVERHEAD + estimateSimpleBytes(inner)
       if (est < rSize) {
@@ -328,7 +344,7 @@ const encodeLane = (chunk: Uint8Array): LaneChunk => {
     }
   }
 
-  return pickBest(candidates) as LaneChunk
+  return pickBest(candidates, budget.maxExpensiveCandidates, "lane") as LaneChunk
 }
 
 // ── encodeChunkInner: all non-delta paths ─────────────────────────────────────
@@ -343,7 +359,7 @@ const encodeLane = (chunk: Uint8Array): LaneChunk => {
 // Interleave/bitplane search is comparatively expensive — recursive per-lane/plane
 // candidate search — and rarely beats a direct whole-chunk structural match when
 // one exists, so it only runs when nothing structural was found for the chunk.
-const encodeChunkInner = (chunk: Uint8Array): NonDeltaChunk => {
+const encodeChunkInner = (chunk: Uint8Array, budget: SearchBudget = DEFAULT_BUDGET, depth = 0): NonDeltaChunk => {
   const seq   = toSeq(chunk)
   const rSize = rawSize(chunk.length)
 
@@ -353,7 +369,8 @@ const encodeChunkInner = (chunk: Uint8Array): NonDeltaChunk => {
 
   // GF(2^8) paths first — preferred for byte-structured data (firmware, PRBS streams).
   // GF(2^16) is a fallback for word-level recurrences (ADC/DAC, 16-bit samples).
-  candidates.push(...searchLFSRCandidates(chunk, seq))
+  const lfsrCandidates = searchLFSRCandidates(chunk, seq, budget)
+  candidates.push(...lfsrCandidates)
 
   const lfsr16 = tryLFSR16(chunk)
   if (lfsr16) candidates.push({ chunk: lfsr16, estimatedSize: estimateNonDeltaBytes(lfsr16), label: "lfsr16" })
@@ -370,18 +387,25 @@ const encodeChunkInner = (chunk: Uint8Array): NonDeltaChunk => {
     if (est < rSize)
       candidates.push({ chunk: { kind: "cyclic", cycle, originalLength: chunk.length } satisfies CyclicChunk, estimatedSize: est, label: "cyclic" })
   } else {
-    const approxCyclic = approxCyclicCandidate(chunk, rSize)
-    if (approxCyclic) candidates.push(approxCyclic)
+    // See the matching comment in encodeChunkCore — skip the expensive
+    // approx-cyclic sweep once a tight exact (zero-residual) LFSR fit exists.
+    const hasCleanExactFit = lfsrCandidates.some(c => c.label === "exact" && c.estimatedSize < rSize * 0.2)
+    if (!hasCleanExactFit) {
+      const approxCyclic = approxCyclicCandidate(chunk, rSize)
+      if (approxCyclic) candidates.push(approxCyclic)
+    }
   }
 
-  if (candidates.length === 1 && shouldTryTransforms(chunk)) {
+  // Interleave/bitplane themselves count as one transform level (depth+1) —
+  // only worth considering if that still fits the budget.
+  if (candidates.length === 1 && depth + 1 <= budget.maxTransformDepth && shouldTryTransforms(chunk)) {
     const INTERLEAVE_OVERHEAD = 6
     const BITPLANE_OVERHEAD   = 6
 
     for (const m of [2, 3, 4]) {
       const lanes = splitInterleave(chunk, m)
       if (!lanes.every(laneIsStructured)) continue
-      const encodedLanes = lanes.map(encodeLane)
+      const encodedLanes = lanes.map(l => encodeLane(l, budget, depth + 1))
       if (!encodedLanes.some(l => l.kind !== "raw")) continue
       const laneBytes = encodedLanes.reduce((s, l) => s + 4 + estimateLaneBytes(l), 0)
       const est = INTERLEAVE_OVERHEAD + laneBytes
@@ -393,7 +417,7 @@ const encodeChunkInner = (chunk: Uint8Array): NonDeltaChunk => {
 
     const planes = splitBitplanes(chunk)
     if (planes.every(laneIsStructured)) {
-      const encodedPlanes = planes.map(encodeLane)
+      const encodedPlanes = planes.map(p => encodeLane(p, budget, depth + 1))
       if (encodedPlanes.some(p => p.kind !== "raw")) {
         const planeBytes = encodedPlanes.reduce((s, p) => s + 4 + estimateLaneBytes(p), 0)
         const est = BITPLANE_OVERHEAD + planeBytes
@@ -405,7 +429,7 @@ const encodeChunkInner = (chunk: Uint8Array): NonDeltaChunk => {
     }
   }
 
-  return pickBest(candidates) as NonDeltaChunk
+  return pickBest(candidates, budget.maxExpensiveCandidates, "inner") as NonDeltaChunk
 }
 
 const tryAffine = (chunk: Uint8Array, seq: GFElem[]) => {
@@ -437,11 +461,11 @@ const laneIsStructured = (lane: Uint8Array): boolean => {
 // Compares the whole-chunk representation against every delta-wrapped variant
 // by actual serialized size (Priority 1), instead of returning the first delta
 // transform whose cheap estimate beats raw.
-export const encodeChunk = (chunk: Uint8Array): Chunk => {
+export const encodeChunk = (chunk: Uint8Array, budget: SearchBudget = DEFAULT_BUDGET): Chunk => {
   const rSize = rawSize(chunk.length)
 
   // ── Paths 0-7: structural paths (GF16, GF8 LFSR, affine, cyclic) + interleave/bitplane ──
-  const core = encodeChunkInner(chunk)
+  const core = encodeChunkInner(chunk, budget, 0)
 
   const candidates: EncodeCandidate[] = [
     { chunk: core, estimatedSize: core.kind === "raw" ? rSize : estimateNonDeltaBytes(core), label: "core" },
@@ -450,12 +474,14 @@ export const encodeChunk = (chunk: Uint8Array): Chunk => {
   // ── Paths 8-10: delta transforms (high-entropy + algebraic gate) ──
   // Inner encoding uses encodeChunkInner (not encodeChunkCore) to enable depth-2
   // compositions: delta(affine), delta(lfsr16), delta(interleave), delta(bitplane).
-  if (shouldTryTransforms(chunk)) {
+  // Delta itself is depth 1; its inner call is told depth=1 so a further nested
+  // interleave/bitplane inside it only runs if the budget allows depth 2.
+  if (budget.maxTransformDepth >= 1 && shouldTryTransforms(chunk)) {
     const DELTA_OVERHEAD = 10  // kind(1) + origLen(4) + deltaId(1) + innerLen(4)
 
     for (const dt of DELTA_TRANSFORMS) {
       const transformed = dt.apply(chunk)
-      const inner = encodeChunkInner(transformed)
+      const inner = encodeChunkInner(transformed, budget, 1)
       if (inner.kind === "raw") continue
       const est = DELTA_OVERHEAD + estimateNonDeltaBytes(inner)
       if (est < rSize) {
@@ -465,7 +491,7 @@ export const encodeChunk = (chunk: Uint8Array): Chunk => {
     }
   }
 
-  return pickBest(candidates) as Chunk
+  return pickBest(candidates, budget.maxExpensiveCandidates, "top-level") as Chunk
 }
 
 // Merge adjacent LFSR chunks that share identical coefficients and a continuous LFSR
@@ -530,44 +556,124 @@ const mergeCompatibleChunks = (chunks: Chunk[]): Chunk[] => {
   return result
 }
 
+// Real (not heuristic) per-chunk cost estimate for the model-aware chunker:
+// actual serialized size of the structural-only encoding (LFSR/cyclic/approx-
+// cyclic), skipping delta/interleave/bitplane search — accurate enough to make
+// good split-vs-unsplit decisions without paying for the full candidate
+// pipeline on every boundary the chunker considers.
+const chunkCost = (budget: SearchBudget) => (buf: Uint8Array): number => realSize(encodeChunkCore(buf, budget))
+
+// ── Switching-LFSR: bundle adjacent model-aware pieces into one envelope ─────
+//
+// Roadmap 2, Priority 4. When the model-aware chunker splits one entropy-chunk
+// into several pieces, each piece becomes its own top-level chunk by default —
+// each paying its own kind/origLen/CRC32/XDNI-index framing. If every piece's
+// best structural fit is a clean (zero-prefix) LFSR, bundling them into one
+// switching-LFSR chunk trades that per-piece framing for a single shared
+// envelope. Only built as a candidate to compare against separate chunks —
+// per the roadmap's own framing, "the cost model should decide: two top-level
+// chunks vs one switching-LFSR chunk," never assumed to win.
+const buildSwitchingCandidate = (pieces: readonly Uint8Array[], budget: SearchBudget): SwitchingLFSRChunk | null => {
+  const cores = pieces.map(p => encodeChunkCore(p, budget))
+  if (!cores.every((c): c is LFSRChunk => c.kind === "lfsr" && c.prefix.length === 0)) return null
+
+  const segments = cores.map((c, i) => ({
+    lfsr: c.lfsr, init: c.init, residual: c.residual, segmentLength: pieces[i]!.length,
+  }))
+  return {
+    kind: "switching-lfsr",
+    segments,
+    originalLength: pieces.reduce((s, p) => s + p.length, 0),
+  }
+}
+
+// Decide between separate top-level chunks and one switching-LFSR chunk for a
+// group of pieces that came from the same entropy-chunk, given the pieces'
+// already-computed separate encodings (shared by the sync and worker-parallel
+// paths so both make the identical decision from identical inputs).
+// Per-chunk top-level framing a switching-LFSR chunk can avoid paying for
+// every piece but the first: kind(1) + origLen(4) + CRC32(4) + XDNI entry(8).
+const PER_CHUNK_FRAMING = 17
+
+const chooseGroupEncoding = (pieces: readonly Uint8Array[], separate: readonly Chunk[], budget: SearchBudget): Chunk[] => {
+  if (pieces.length < 2) return separate as Chunk[]
+  // Cheap pre-filter: the most this group could possibly save is
+  // (pieces.length - 1) * PER_CHUNK_FRAMING bytes of avoided framing. Skip the
+  // expensive verification (re-running encodeChunkCore per piece) when that
+  // ceiling is small relative to the pieces' own size — not worth the search.
+  const totalLen = pieces.reduce((s, p) => s + p.length, 0)
+  if ((pieces.length - 1) * PER_CHUNK_FRAMING < totalLen * 0.01) return separate as Chunk[]
+
+  const switching = buildSwitchingCandidate(pieces, budget)
+  if (!switching) return separate as Chunk[]
+
+  const separateTotal  = separate.reduce((s, c) => s + realSize(c), 0)
+  const switchingTotal = realSize(switching)
+  return switchingTotal < separateTotal ? [switching] : (separate as Chunk[])
+}
+
+// Encode one group of pieces that came from the same entropy-chunk (a single
+// piece if the model-aware chunker didn't split it) — separate top-level
+// chunks by default, or one switching-LFSR chunk when that's actually smaller.
+const encodeGroup = (pieces: readonly Uint8Array[], budget: SearchBudget): Chunk[] =>
+  chooseGroupEncoding(pieces, pieces.map(p => encodeChunk(p, budget)), budget)
+
 // Synchronous encode: all chunks in the calling thread
-export const encode = (buf: Uint8Array): CompressedFile => ({
-  chunks: mergeCompatibleChunks(adaptiveChunks(buf).map(encodeChunk)),
+export const encode = (buf: Uint8Array, budget: SearchBudget = DEFAULT_BUDGET): CompressedFile => ({
+  chunks: mergeCompatibleChunks(
+    adaptiveChunkGroups(buf, chunkCost(budget), budget).flatMap(pieces => encodeGroup(pieces, budget))
+  ),
   originalSize: buf.length,
 })
 
 // Async encode: chunks distributed across a worker thread pool for parallelism.
 // Falls back to synchronous if workers fail to initialise (e.g. no tsx loader).
+// budget is forwarded to every worker so async and sync encode stay byte-identical
+// for the same input regardless of how work is scheduled across threads.
+// Grouping (for the switching-LFSR decision) is computed once in the calling
+// thread and preserved across the worker round-trip — each individual piece's
+// encodeChunk still runs in parallel across workers, but the separate-vs-
+// switching choice for a multi-piece group is made afterward from those
+// results, identically to the sync path, so the two never diverge.
 export const encodeAsync = async (
   buf: Uint8Array,
   workers?: number,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  budget: SearchBudget = DEFAULT_BUDGET
 ): Promise<CompressedFile> => {
-  const chunks = adaptiveChunks(buf)
-  const total  = chunks.length
+  const groups = adaptiveChunkGroups(buf, chunkCost(budget), budget)
+  const pieces = groups.flat()
+  const total  = pieces.length
 
   let pool: import("./worker-pool").WorkerPool | null = null
   try {
     const { WorkerPool } = await import("./worker-pool")
     pool = new WorkerPool(workers)
   } catch {
-    return encode(buf)
+    return encode(buf, budget)
   }
 
   try {
     let done = 0
     const serializedChunks = await Promise.all(
-      chunks.map(async chunk => {
-        const copy   = new Uint8Array(chunk)
-        const result = await pool!.encode(copy.buffer)
+      pieces.map(async piece => {
+        const copy   = new Uint8Array(piece)
+        const result = await pool!.encode(copy.buffer, budget)
         onProgress?.(++done, total)
         return result
       })
     )
-    return {
-      chunks: mergeCompatibleChunks(serializedChunks.map(ab => deserializeChunk(new Uint8Array(ab)))),
-      originalSize: buf.length,
+    const decoded = serializedChunks.map(ab => deserializeChunk(new Uint8Array(ab)))
+
+    const finalChunks: Chunk[] = []
+    let idx = 0
+    for (const groupPieces of groups) {
+      const groupResults = decoded.slice(idx, idx + groupPieces.length)
+      idx += groupPieces.length
+      finalChunks.push(...chooseGroupEncoding(groupPieces, groupResults, budget))
     }
+
+    return { chunks: mergeCompatibleChunks(finalChunks), originalSize: buf.length }
   } finally {
     await pool.terminate()
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { packResidual, packedResidualSize, unpackResidual, packSplitResidual, packRiceResidual } from "./sparse"
+import { packResidual, packedResidualSize, unpackResidual, packSplitResidual, packRiceResidual, packBitmapResidual, packRLEResidual } from "./sparse"
 
 const roundtrip = (residual: Uint8Array) => {
   const packed = packResidual(residual)
@@ -211,5 +211,133 @@ describe("packRiceResidual (kind=6)", () => {
     const varint = packResidual(residual)
     const rice = packRiceResidual(residual)!
     expect(rice.length).toBeLessThan(varint.length)
+  })
+})
+
+// Roadmap 2, Priority 2: bitmap (kind=7) and RLE (kind=8) residual formats
+describe("packBitmapResidual (kind=7)", () => {
+  const lcg = (seed: number) => {
+    let s = seed
+    return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff }
+  }
+
+  const roundtripBitmap = (residual: Uint8Array) => {
+    const packed = packBitmapResidual(residual)
+    expect(packed).not.toBeNull()
+    expect(packed![0]).toBe(7)
+    const [decoded, consumed] = unpackResidual(packed!, 0, residual.length)
+    expect(consumed).toBe(packed!.length)
+    expect(decoded).toEqual(residual)
+  }
+
+  it("returns null below the minimum length", () => {
+    const r = new Uint8Array(16)
+    r[3] = 1
+    expect(packBitmapResidual(r)).toBeNull()
+  })
+
+  it("returns null for all-zero residual", () => {
+    expect(packBitmapResidual(new Uint8Array(64))).toBeNull()
+  })
+
+  it("round-trips at 40% density", () => {
+    const rng = lcg(1)
+    const r = Uint8Array.from({ length: 500 }, () => rng() < 0.4 ? 1 + Math.floor(rng() * 255) : 0)
+    roundtripBitmap(r)
+  })
+
+  it("round-trips a single set bit", () => {
+    const r = new Uint8Array(64)
+    r[40] = 0xff
+    roundtripBitmap(r)
+  })
+
+  it("round-trips a fully dense residual", () => {
+    const r = Uint8Array.from({ length: 200 }, (_, i) => (i % 256) + 1)
+    roundtripBitmap(r)
+  })
+
+  it("wins over VarInt at moderate (40-60%) density", () => {
+    const rng = lcg(42)
+    const n = 4096
+    const r = Uint8Array.from({ length: n }, () => rng() < 0.45 ? 1 + Math.floor(rng() * 255) : 0)
+    const varint = packResidual(r)
+    const bitmap = packBitmapResidual(r)!
+    expect(bitmap.length).toBeLessThan(varint.length)
+  })
+
+  it("packed size matches ceil(N/8) + popcount + 1", () => {
+    const r = new Uint8Array(64)
+    for (const p of [0, 10, 20, 30]) r[p] = 1
+    const packed = packBitmapResidual(r)!
+    expect(packed.length).toBe(1 + Math.ceil(64 / 8) + 4)
+  })
+})
+
+describe("packRLEResidual (kind=8)", () => {
+  const roundtripRLE = (residual: Uint8Array) => {
+    const packed = packRLEResidual(residual)
+    expect(packed).not.toBeNull()
+    expect(packed![0]).toBe(8)
+    const [decoded, consumed] = unpackResidual(packed!, 0, residual.length)
+    expect(consumed).toBe(packed!.length)
+    expect(decoded).toEqual(residual)
+  }
+
+  it("returns null below the minimum length", () => {
+    const r = new Uint8Array(10)
+    r[3] = 1
+    expect(packRLEResidual(r)).toBeNull()
+  })
+
+  it("returns null for all-zero or all-non-zero residual (single run)", () => {
+    expect(packRLEResidual(new Uint8Array(64))).toBeNull()
+    expect(packRLEResidual(new Uint8Array(64).fill(7))).toBeNull()
+  })
+
+  it("round-trips a single burst (position 500, length 17)", () => {
+    const r = new Uint8Array(2048)
+    for (let i = 500; i < 517; i++) r[i] = 1 + (i % 250)
+    roundtripRLE(r)
+  })
+
+  it("round-trips a burst starting at position 0", () => {
+    const r = new Uint8Array(200)
+    for (let i = 0; i < 20; i++) r[i] = 5
+    roundtripRLE(r)
+  })
+
+  it("round-trips a burst ending at the last byte", () => {
+    const r = new Uint8Array(200)
+    for (let i = 180; i < 200; i++) r[i] = 9
+    roundtripRLE(r)
+  })
+
+  it("round-trips multiple bursts", () => {
+    const r = new Uint8Array(4096)
+    for (let i = 100; i < 116; i++) r[i] = 1
+    for (let i = 2000; i < 2064; i++) r[i] = 2
+    for (let i = 3900; i < 3908; i++) r[i] = 3
+    roundtripRLE(r)
+  })
+
+  it("wins over VarInt for a single large burst", () => {
+    const r = new Uint8Array(4096)
+    for (let i = 1000; i < 1100; i++) r[i] = 1 + (i % 250)
+    const varint = packResidual(r)
+    const rle = packRLEResidual(r)!
+    expect(rle.length).toBeLessThan(varint.length)
+  })
+
+  it("loses (or ties) to sparse formats for scattered isolated errors — still correct either way", () => {
+    const lcg2 = (seed: number) => { let s = seed; return () => { s = (s*1103515245+12345)&0x7fffffff; return s/0x7fffffff } }
+    const rng = lcg2(9)
+    const r = new Uint8Array(4096)
+    for (let i = 0; i < r.length; i++) if (rng() < 0.01) r[i] = 1 + Math.floor(rng() * 255)
+    const rle = packRLEResidual(r)
+    if (rle) {
+      const [decoded] = unpackResidual(rle, 0, r.length)
+      expect(decoded).toEqual(r)
+    }
   })
 })

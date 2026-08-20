@@ -20,10 +20,23 @@
 //         [pairCount] values. Rice/Golomb coding beats VarInt's fixed 1-or-2-byte
 //         granularity when the gap distribution is roughly geometric (the common
 //         case for uniformly-scattered sparse errors) — see bestRiceK below.
+// kind=7: bitmap [ceil(N/8)] presence bits (N = the caller-supplied residual
+//         length), [popcount] values for the set bits in position order. No
+//         header needed beyond the kind byte — N comes from context and the
+//         value count is just however many bits are set. Wins in the density
+//         range (roughly 30-60%) where per-error position/value pairs cost
+//         more than a flat 1 bit/position, but dense byte storage (kind=1)
+//         still wastes a full byte on every zero.
+// kind=8: RLE    [2] runCount, runCount VarInt run lengths (alternating
+//         zero-run, non-zero-run, starting with a zero-run — length 0 if the
+//         residual itself starts non-zero), then one value byte per byte
+//         covered by a non-zero run, in order. Wins when errors cluster into
+//         contiguous bursts rather than scattering — one run beats many
+//         individual (position, value) pairs.
 
 import { isAllZero } from "./buffer"
 
-export type ResidualKind = 0 | 1 | 2 | 3 | 4 | 5 | 6
+export type ResidualKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 
 // Compute the VarInt-encoded byte count for a gap value.
 // Gaps < 128 fit in 1 byte; gaps 128–16383 fit in 2 bytes.
@@ -198,6 +211,84 @@ export const packRiceResidual = (residual: Uint8Array): Uint8Array | null => {
   buf.set(posBytes, 8)
   let wOff = 8 + posBytes.length
   for (const [, val] of pairs) buf[wOff++] = val
+  return buf
+}
+
+// ── Bitmap (kind=7) — roadmap 2, Priority 2 ──────────────────────────────────
+
+// Below this length a presence bitmap's flat ceil(N/8)-byte cost can't compete
+// with sparse formats' per-error cost even in the best case.
+const MIN_LENGTH_FOR_BITMAP = 32
+
+export const packBitmapResidual = (residual: Uint8Array): Uint8Array | null => {
+  const n = residual.length
+  if (n < MIN_LENGTH_FOR_BITMAP) return null
+
+  let popcount = 0
+  for (let i = 0; i < n; i++) if (residual[i] !== 0) popcount++
+  if (popcount === 0) return null  // all-zero handled by kind=0 upstream
+
+  const bitmapBytes = Math.ceil(n / 8)
+  const buf = new Uint8Array(1 + bitmapBytes + popcount)
+  buf[0] = 7
+  let vOff = 1 + bitmapBytes
+  for (let i = 0; i < n; i++) {
+    if (residual[i] !== 0) {
+      buf[1 + (i >> 3)]! |= 1 << (i & 7)
+      buf[vOff++] = residual[i]!
+    }
+  }
+  return buf
+}
+
+// ── RLE (kind=8) — roadmap 2, Priority 2 ─────────────────────────────────────
+
+const MIN_LENGTH_FOR_RLE = 16
+
+export const packRLEResidual = (residual: Uint8Array): Uint8Array | null => {
+  const n = residual.length
+  if (n < MIN_LENGTH_FOR_RLE) return null
+
+  // Alternating zero-run / non-zero-run lengths, starting with a zero-run
+  // (length 0 if residual[0] is itself non-zero).
+  const runLengths: number[] = []
+  const values: number[] = []
+  let i = 0
+  let wantZero = true
+  while (i < n) {
+    const start = i
+    if (wantZero) {
+      while (i < n && residual[i] === 0) i++
+    } else {
+      while (i < n && residual[i] !== 0) { values.push(residual[i]!); i++ }
+    }
+    runLengths.push(i - start)
+    wantZero = !wantZero
+  }
+  // All-zero or all-non-zero — kind=0/kind=1 already own those cases; RLE
+  // needs at least one real zero run and one real non-zero run to have
+  // anything to compress (a leading/trailing zero-length run still leaves
+  // runLengths.length >= 2, so check the actual value count instead).
+  if (values.length === 0 || values.length === n) return null
+  if (runLengths.length > 65535) return null
+  // writeVarint's 2-byte form only safely represents gaps up to 32767 (7 bits
+  // + a full byte); a merged chunk's residual (mergeCompatibleChunks
+  // concatenates adjacent same-model chunks) can be arbitrarily long, so a
+  // single run could exceed that. Bail out to another format rather than
+  // silently truncating.
+  if (runLengths.some(len => len > 32767)) return null
+
+  let dataBytes = 0
+  for (const len of runLengths) dataBytes += varintByteLen(len)
+
+  const size = 1 + 2 + dataBytes + values.length
+  const buf  = new Uint8Array(size)
+  const view = new DataView(buf.buffer)
+  buf[0] = 8
+  view.setUint16(1, runLengths.length)
+  let off = 3
+  for (const len of runLengths) off += writeVarint(buf, off, len)
+  buf.set(values, off)
   return buf
 }
 
@@ -390,6 +481,37 @@ export const unpackResidual = (
     }
     let rOff = off + 8 + posByteLen
     for (let i = 0; i < pairCount; i++) residual[positions[i]!] = buf[rOff++]!
+    return [residual, rOff - off]
+  }
+
+  if (kind === 7) {
+    const bitmapBytes = Math.ceil(lfsrRegionLen / 8)
+    const residual    = new Uint8Array(lfsrRegionLen)
+    let vOff = off + 1 + bitmapBytes
+    for (let i = 0; i < lfsrRegionLen; i++) {
+      const byte = buf[off + 1 + (i >> 3)]!
+      if ((byte >> (i & 7)) & 1) residual[i] = buf[vOff++]!
+    }
+    return [residual, vOff - off]
+  }
+
+  if (kind === 8) {
+    const runCount = view.getUint16(off + 1)
+    const residual = new Uint8Array(lfsrRegionLen)
+    let rOff = off + 3
+    const runLengths = new Array<number>(runCount)
+    for (let i = 0; i < runCount; i++) {
+      const b0 = buf[rOff++]!
+      if (b0 & 0x80) { const b1 = buf[rOff++]!; runLengths[i] = (b0 & 0x7F) | (b1 << 7) }
+      else runLengths[i] = b0
+    }
+    let pos = 0
+    let isZeroRun = true
+    for (const len of runLengths) {
+      if (!isZeroRun) for (let k = 0; k < len; k++) residual[pos + k] = buf[rOff++]!
+      pos += len
+      isZeroRun = !isZeroRun
+    }
     return [residual, rOff - off]
   }
 

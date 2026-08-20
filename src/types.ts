@@ -109,7 +109,26 @@ export interface BitplaneChunk {
   readonly originalLength: number
 }
 
-export type Chunk = SimpleChunk | LFSR16Chunk | DeltaChunk | AffineChunk | InterleaveChunk | BitplaneChunk
+// Roadmap 2, Priority 4: one segment of a switching-LFSR chunk — a clean
+// (zero-prefix) LFSR fit covering `segmentLength` bytes of the whole chunk.
+export interface LFSRSegment {
+  readonly lfsr: LFSR
+  readonly init: GFElem[]
+  readonly residual: Uint8Array
+  readonly segmentLength: number
+}
+
+// A run of 2+ adjacent LFSR models sharing one top-level chunk envelope
+// instead of each paying its own kind/origLen/CRC32/XDNI-index overhead.
+// Chosen over separate top-level chunks only when it's actually smaller —
+// see encoder.ts's switching-LFSR candidate.
+export interface SwitchingLFSRChunk {
+  readonly kind: "switching-lfsr"
+  readonly segments: readonly LFSRSegment[]
+  readonly originalLength: number
+}
+
+export type Chunk = SimpleChunk | LFSR16Chunk | DeltaChunk | AffineChunk | InterleaveChunk | BitplaneChunk | SwitchingLFSRChunk
 
 export interface CompressedFile {
   readonly chunks: Chunk[]

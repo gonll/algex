@@ -5,10 +5,11 @@
 import { parentPort } from "worker_threads"
 import { encodeChunk } from "./encoder"
 import { serializeChunk } from "./format"
+import { SearchBudget, DEFAULT_BUDGET } from "./search-budget"
 
-parentPort!.on("message", ({ id, buffer }: { id: number; buffer: ArrayBuffer }) => {
+parentPort!.on("message", ({ id, buffer, budget }: { id: number; buffer: ArrayBuffer; budget?: SearchBudget }) => {
   const bytes      = new Uint8Array(buffer)
-  const chunk      = encodeChunk(bytes)
+  const chunk      = encodeChunk(bytes, budget ?? DEFAULT_BUDGET)
   const serialized = serializeChunk(chunk)
   // Transfer the ArrayBuffer back to avoid copying
   parentPort!.postMessage({ id, serialized: serialized.buffer }, [serialized.buffer as ArrayBuffer])

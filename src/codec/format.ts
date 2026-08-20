@@ -36,8 +36,8 @@
 // magic is PAD5.
 
 import { deflateRawSync, inflateRawSync, brotliCompressSync, brotliDecompressSync, constants } from "zlib"
-import { CompressedFile, Chunk, CyclicChunk, ApproxCyclicChunk, SimpleChunk, LaneChunk, LFSRChunk, DeltaChunk, AffineChunk, InterleaveChunk, BitplaneChunk, LFSR16Chunk, NonDeltaChunk } from "../types"
-import { packResidual, packSplitResidual, packRiceResidual, unpackResidual } from "../utils/sparse"
+import { CompressedFile, Chunk, CyclicChunk, ApproxCyclicChunk, SimpleChunk, LaneChunk, LFSRChunk, DeltaChunk, AffineChunk, InterleaveChunk, BitplaneChunk, LFSR16Chunk, NonDeltaChunk, SwitchingLFSRChunk } from "../types"
+import { packResidual, packSplitResidual, packRiceResidual, packBitmapResidual, packRLEResidual, unpackResidual } from "../utils/sparse"
 
 const MAGIC_V3        = 0x50414445  // "PADE"
 const MAGIC_V4        = 0x50414434  // "PAD4"
@@ -52,6 +52,7 @@ const KIND_BITPLANE   = 6
 const KIND_LFSR16     = 7
 const KIND_APPROX_CYCLIC = 8
 const KIND_LFSR_REF   = 9   // PAD5 only: same as KIND_LFSR but coeffs come from the model table
+const KIND_SWITCHING_LFSR = 10  // roadmap 2, Priority 4: a run of adjacent LFSR segments sharing one envelope
 const KIND_EOF        = 0xFE
 const XDNI_MAGIC      = 0x58444E49  // "XDNI"
 const RES_PLAIN       = 0
@@ -172,26 +173,28 @@ const bestWireFor = (packed: Uint8Array): Uint8Array => {
   return out
 }
 
-// Priority 3/4: the split-stream (kind=5) and Rice-coded (kind=6) packings are
-// never smaller than the interleaved packing (kind=2/3/4) in raw bytes — their
-// value only shows up after compression (split: cleaner streams for deflate/
-// brotli to exploit) or is independent of the outer compressor entirely (Rice:
-// bit-level packing beats VarInt's byte granularity on typical gap
-// distributions even before any outer compression). Both are compressed
-// alongside the primary candidate and the smallest ACTUAL wire form wins.
+// Priority 3/4 (roadmap 1) and Priority 2 (roadmap 2): several residual
+// position/value formats compete on ACTUAL post-compression size, not raw
+// bytes — split-stream (kind=5) and Rice-coded (kind=6) are never smaller
+// than interleaved (kind=2/3/4) in raw bytes, and bitmap (kind=7) trades a
+// flat ceil(N/8)-byte cost for no per-error overhead, so which one wins
+// depends entirely on the actual error distribution (scattered, clustered,
+// dense, ...). RLE (kind=8) specifically targets bursty/clustered errors that
+// none of the position-based formats represent compactly. Every applicable
+// candidate is compressed and the smallest ACTUAL wire form wins.
 const computeWireResidual = (residual: Uint8Array): Uint8Array => {
   let best = bestWireFor(packResidual(residual))
 
-  const split = packSplitResidual(residual)
-  if (split) {
-    const splitWire = bestWireFor(split)
-    if (splitWire.length < best.length) best = splitWire
-  }
-
-  const rice = packRiceResidual(residual)
-  if (rice) {
-    const riceWire = bestWireFor(rice)
-    if (riceWire.length < best.length) best = riceWire
+  const candidates = [
+    packSplitResidual(residual),
+    packRiceResidual(residual),
+    packBitmapResidual(residual),
+    packRLEResidual(residual),
+  ]
+  for (const packed of candidates) {
+    if (!packed) continue
+    const wire = bestWireFor(packed)
+    if (wire.length < best.length) best = wire
   }
 
   return best
@@ -209,8 +212,10 @@ type PreparedAffine     = { kind: "affine";     chunk: AffineChunk;     innerBuf
 type PreparedInterleave = { kind: "interleave"; chunk: InterleaveChunk; laneBufs: Uint8Array[] }
 type PreparedBitplane   = { kind: "bitplane";   chunk: BitplaneChunk;   planeBufs: Uint8Array[] }
 type PreparedLFSR16     = { kind: "lfsr16";     chunk: LFSR16Chunk;     rWire: Uint8Array }
+type PreparedSwitchingLFSR = { kind: "switching-lfsr"; chunk: SwitchingLFSRChunk; rWires: Uint8Array[] }
 type Prepared = PreparedRaw | PreparedLFSR | PreparedLFSRRef | PreparedCyclic | PreparedApproxCyclic
               | PreparedDelta | PreparedAffine | PreparedInterleave | PreparedBitplane | PreparedLFSR16
+              | PreparedSwitchingLFSR
 
 // ── Simple chunk serialization (used for lane/plane embedding) ────────────────
 
@@ -291,6 +296,12 @@ const preparedSize = (p: Prepared): number => {
   if (p.kind === "lfsr-ref") {
     const { prefix, init } = p.chunk
     return 1 + 4 + 1 + prefix.length + 2 + init.length + p.rWire.length  // [2]modelId instead of [2]lfsrLen+[L]coeffs
+  }
+  if (p.kind === "switching-lfsr") {
+    return 1 + 4 + 2 + p.chunk.segments.reduce((s, seg, i) => {
+      const L = seg.lfsr.length
+      return s + 4 + 2 + L + seg.init.length + p.rWires[i]!.length
+    }, 0)
   }
   // lfsr
   const { prefix, lfsr, init } = p.chunk
@@ -388,6 +399,20 @@ const writeChunk = (buf: Uint8Array, view: DataView, p: Prepared, off: number): 
     return off - start
   }
 
+  if (p.kind === "switching-lfsr") {
+    buf[off++] = KIND_SWITCHING_LFSR
+    view.setUint32(off, p.chunk.originalLength); off += 4
+    view.setUint16(off, p.chunk.segments.length); off += 2
+    p.chunk.segments.forEach((seg, i) => {
+      view.setUint32(off, seg.segmentLength); off += 4
+      view.setUint16(off, seg.lfsr.length);   off += 2
+      for (const c of seg.lfsr.coeffs) buf[off++] = c
+      for (const v of seg.init)        buf[off++] = v
+      buf.set(p.rWires[i]!, off); off += p.rWires[i]!.length
+    })
+    return off - start
+  }
+
   // KIND_LFSR
   const { prefix, lfsr, init, originalLength } = p.chunk
   buf[off++] = KIND_LFSR
@@ -425,6 +450,8 @@ const prepare = (chunk: Chunk, modelId?: number): Prepared => {
   if (chunk.kind === "cyclic")     return { kind: "cyclic",     chunk }
   if (chunk.kind === "approx-cyclic") return { kind: "approx-cyclic", chunk, rWire: wireResidual(chunk.residual) }
   if (chunk.kind === "lfsr16")     return { kind: "lfsr16",     chunk, rWire: wireResidual(chunk.residual) }
+  if (chunk.kind === "switching-lfsr")
+    return { kind: "switching-lfsr", chunk, rWires: chunk.segments.map(seg => wireResidual(seg.residual)) }
   if (chunk.kind === "affine")     return { kind: "affine",     chunk, innerBuf: serializeSimpleChunk(chunk.inner) }
   // Lanes/planes may be a plain SimpleChunk or one delta transform deep
   // (Priority 6) — serializeChunk handles any Chunk kind, including "delta".
@@ -692,6 +719,36 @@ const readChunkInner = (
       { kind: "lfsr", prefix, lfsr: { coeffs, length: lfsrLen }, init, residual, originalLength },
       off - start,
     ]
+  }
+
+  if (kind === KIND_SWITCHING_LFSR) {
+    const originalLength = view.getUint32(off); off += 4
+    const segmentCount   = view.getUint16(off);  off += 2
+    const segments: { lfsr: { coeffs: number[]; length: number }; init: number[]; residual: Uint8Array; segmentLength: number }[] = []
+    for (let s = 0; s < segmentCount; s++) {
+      const segmentLength = view.getUint32(off); off += 4
+      const lfsrLen       = view.getUint16(off);  off += 2
+      const coeffs = Array.from(buf.subarray(off, off + lfsrLen)); off += lfsrLen
+      const init   = Array.from(buf.subarray(off, off + lfsrLen)); off += lfsrLen
+      const flag = buf[off++]!
+      let residual: Uint8Array
+      if (flag === RES_BROTLI) {
+        const compLen = view.getUint32(off); off += 4
+        const plain   = brotliDecompressSync(buf.slice(off, off + compLen)); off += compLen
+        ;[residual]   = unpackResidual(plain, 0, segmentLength)
+      } else if (flag === RES_DEFLATED) {
+        const deflLen = view.getUint32(off); off += 4
+        const plain   = inflateRawSync(buf.slice(off, off + deflLen)); off += deflLen
+        ;[residual]   = unpackResidual(plain, 0, segmentLength)
+      } else {
+        const [res, consumed] = unpackResidual(buf, off, segmentLength)
+        residual = res; off += consumed
+      }
+      segments.push({ lfsr: { coeffs, length: lfsrLen }, init, residual, segmentLength })
+    }
+    const payloadEnd = off
+    if (isV4) { const s = view.getUint32(off); off += 4; const a = crc32(buf.subarray(start, payloadEnd)); if (s !== a) throw new Error(`CRC mismatch @${start}`) }
+    return [{ kind: "switching-lfsr", segments, originalLength }, off - start]
   }
 
   // KIND_LFSR

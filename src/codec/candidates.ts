@@ -8,6 +8,8 @@
 
 import { Chunk } from "../types"
 import { serializeChunk } from "./format"
+import { DEFAULT_BUDGET } from "./search-budget"
+import { isCandidateTracingEnabled, recordChunkTrace } from "./candidate-trace"
 
 export interface EncodeCandidate {
   readonly chunk: Chunk
@@ -20,20 +22,45 @@ export interface EncodeCandidate {
 // so callers must only call this on a bounded finalist set, never on every candidate.
 export const realSize = (chunk: Chunk): number => serializeChunk(chunk).length
 
+const chunkLength = (c: Chunk): number => c.kind === "raw" ? c.data.length : c.originalLength
+
 // Rank candidates by cheap estimate, serialize only the top `k` for real size,
 // and return the smallest actual representation. Returns null for an empty list.
-export const pickBest = (candidates: readonly EncodeCandidate[], k = 4): Chunk | null => {
+// `site` is only used for candidate tracing (a no-op unless tracing is enabled).
+export const pickBest = (
+  candidates: readonly EncodeCandidate[],
+  k = DEFAULT_BUDGET.maxExpensiveCandidates,
+  site = "unknown"
+): Chunk | null => {
   if (candidates.length === 0) return null
 
-  const finalists = candidates.length <= k
+  const sorted = candidates.length <= k
     ? candidates
-    : [...candidates].sort((a, b) => a.estimatedSize - b.estimatedSize).slice(0, k)
+    : [...candidates].sort((a, b) => a.estimatedSize - b.estimatedSize)
+  const finalists = sorted.slice(0, k)
+  const finalistSet = new Set(finalists)
 
   let best     = finalists[0]!.chunk
   let bestSize = realSize(best)
+  let bestLabel = finalists[0]!.label
   for (let i = 1; i < finalists.length; i++) {
     const size = realSize(finalists[i]!.chunk)
-    if (size < bestSize) { bestSize = size; best = finalists[i]!.chunk }
+    if (size < bestSize) { bestSize = size; best = finalists[i]!.chunk; bestLabel = finalists[i]!.label }
   }
+
+  if (isCandidateTracingEnabled()) {
+    recordChunkTrace({
+      site,
+      originalLength: chunkLength(best),
+      candidates: sorted.map(c => ({
+        label: c.label,
+        estimatedBytes: c.estimatedSize,
+        actualBytes: finalistSet.has(c) ? realSize(c.chunk) : undefined,
+        rejectedReason: finalistSet.has(c) ? undefined : "not a finalist (cheap-estimate cutoff)",
+      })),
+      winner: bestLabel,
+    })
+  }
+
   return best
 }

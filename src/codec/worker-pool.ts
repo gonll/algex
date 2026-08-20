@@ -8,13 +8,14 @@
 import { Worker }              from "worker_threads"
 import { availableParallelism } from "os"
 import { join }                from "path"
+import { SearchBudget, DEFAULT_BUDGET } from "./search-budget"
 
 // Use a plain CJS shim that registers tsx before loading the TypeScript worker.
 // This avoids relying on inheriting --import/--require flags via execArgv.
 const WORKER_FILE = join(__dirname, "worker-shim.cjs")
 
 type Resolve = (buf: ArrayBuffer) => void
-interface Task { id: number; buffer: ArrayBuffer; resolve: Resolve }
+interface Task { id: number; buffer: ArrayBuffer; budget: SearchBudget; resolve: Resolve }
 
 export class WorkerPool {
   private readonly workers: Worker[] = []
@@ -39,9 +40,9 @@ export class WorkerPool {
     }
   }
 
-  encode(buffer: ArrayBuffer): Promise<ArrayBuffer> {
+  encode(buffer: ArrayBuffer, budget: SearchBudget = DEFAULT_BUDGET): Promise<ArrayBuffer> {
     return new Promise<ArrayBuffer>(resolve => {
-      this.queue.push({ id: this.nextId++, buffer, resolve })
+      this.queue.push({ id: this.nextId++, buffer, budget, resolve })
       this.dispatch()
     })
   }
@@ -51,7 +52,7 @@ export class WorkerPool {
       const worker = this.idle.pop()!
       const task   = this.queue.shift()!
       this.pending.set(task.id, task)
-      worker.postMessage({ id: task.id, buffer: task.buffer }, [task.buffer])
+      worker.postMessage({ id: task.id, buffer: task.buffer, budget: task.budget }, [task.buffer])
     }
   }
 

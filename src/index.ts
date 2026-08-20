@@ -4,6 +4,7 @@ import { gzipSync, gunzipSync, brotliCompressSync, brotliDecompressSync, constan
 import { encode, encodeAsync } from "./codec/encoder"
 import { decode }              from "./codec/decoder"
 import { serialize, deserialize } from "./codec/format"
+import { BUDGETS, CompressionMode } from "./codec/search-budget"
 
 // Priority 7: full-file wrapper competition — raw PAD vs gzip(PAD) vs brotli(PAD).
 // gzip is self-describing (magic 1f 8b) and raw PAD always starts with 'P' (0x50),
@@ -36,8 +37,10 @@ export const wrapSmallest = (pade: Uint8Array): Uint8Array => {
 
 // Synchronous full pipeline: structural GF(2^8/16) encoding → smallest outer wrapper.
 // Output may be raw .pade, gzip-wrapped, or brotli-wrapped — decompress() handles all three.
-export const compress = (input: Uint8Array): Uint8Array =>
-  wrapSmallest(serialize(encode(input)))
+// mode controls the search budget: "fast" (fewer candidates, quicker), "balanced"
+// (default — matches all prior behavior), or "max" (wider search, same bytes or smaller).
+export const compress = (input: Uint8Array, mode: CompressionMode = "balanced"): Uint8Array =>
+  wrapSmallest(serialize(encode(input, BUDGETS[mode])))
 
 // Decompresses output from compress() or compressAsync().
 // Auto-detects gzip (1f 8b) and the brotli marker; falls back to raw PAD3/PAD4/PAD5.
@@ -56,14 +59,22 @@ export type ProgressCallback = (done: number, total: number) => void
 export const compressAsync = async (
   input: Uint8Array,
   workers?: number,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  mode: CompressionMode = "balanced"
 ): Promise<Uint8Array> =>
-  wrapSmallest(serialize(await encodeAsync(input, workers, onProgress)))
+  wrapSmallest(serialize(await encodeAsync(input, workers, onProgress, BUDGETS[mode])))
 
 export { encode, encodeAsync, decode, serialize, deserialize }
 export { streamDeserialize, readChunkAt } from "./codec/format"
 export { createCompressStream, createDecompressStream } from "./codec/stream"
 export { analyzeBuffer, formatAnalysis, toJSON, shouldCompress } from "./core/analysis"
 export { WorkerPool } from "./codec/worker-pool"
+export { BUDGETS, DEFAULT_BUDGET } from "./codec/search-budget"
 export type { CompressedFile, Chunk, LFSR } from "./types"
 export type { AnalysisResult, SegmentInfo } from "./core/analysis"
+export type { SearchBudget, CompressionMode } from "./codec/search-budget"
+export {
+  enableCandidateTracing, disableCandidateTracing, isCandidateTracingEnabled,
+  getCandidateTrace, clearCandidateTrace,
+} from "./codec/candidate-trace"
+export type { CandidateTraceEntry, ChunkTrace } from "./codec/candidate-trace"

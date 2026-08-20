@@ -187,6 +187,13 @@ const describeTransformChunk = (chunk: TransformChunk): { recognition: string; n
     const kinds = chunk.lanes.map(l => l.kind).join(",")
     return { recognition: `${chunk.m}-way interleave [${kinds}]`, noisePercent: 0 }
   }
+  if (chunk.kind === "switching-lfsr") {
+    const totalLen = chunk.segments.reduce((s, seg) => s + seg.segmentLength, 0)
+    const nonZero  = chunk.segments.reduce((s, seg) => s + seg.residual.filter(b => b !== 0).length, 0)
+    const noise    = totalLen > 0 ? (nonZero / totalLen) * 100 : 0
+    const orders   = chunk.segments.map(seg => seg.lfsr.length).join(",")
+    return { recognition: `switching LFSR [${chunk.segments.length} segments, L=${orders}]`, noisePercent: parseFloat(noise.toFixed(1)) }
+  }
   // bitplane
   const kinds = chunk.planes.map(p => p.kind).join(",")
   return { recognition: `bitplane [${kinds}]`, noisePercent: 0 }

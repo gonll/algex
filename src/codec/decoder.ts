@@ -51,6 +51,13 @@ const decodeChunk = (chunk: CompressedFile["chunks"][number]): Uint8Array => {
     return mergeBitplanes(chunk.planes.map(p => decodeChunk(p)))
   }
 
+  if (chunk.kind === "switching-lfsr") {
+    return concatBytes(chunk.segments.map(seg => {
+      const predicted = fromSeq(runLFSR(seg.lfsr, seg.init, seg.segmentLength))
+      return xorBytes(predicted, seg.residual)
+    }))
+  }
+
   if (chunk.kind === "lfsr16") {
     const { coeffs, seed, residual, originalLength } = chunk
     const wordCount = originalLength / 2
