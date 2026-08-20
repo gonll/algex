@@ -16,8 +16,8 @@ A GF(2⁸) m-sequence has ~8 bits/byte Shannon entropy — indistinguishable fro
 
 | File | gzip | pade-compress | Ratio |
 |------|------|---------------|-------|
-| GF(2⁸) geometric sequence (L=1, perfect) | ~100% | **~0.3%** | ~333:1 |
-| Mixed LFSR (L=1/2/3 + 8% noise) 1 MB | ~99% | **1.1%** | **91:1** |
+| GF(2⁸) geometric sequence (L=1, perfect) | ~100% | **~1.2%** | ~84:1 |
+| Mixed LFSR (L=1/2/3 + 8% noise) 1 MB | ~99% | **1.0%** | **~103:1** |
 | Binary executable (`/bin/ls`) | ~60% | **19.3%** | 5.1:1 |
 | Natural language text | ~35% | 100.1% | — |
 | WebP image | ~100% | ~100.5% | — |
@@ -33,7 +33,7 @@ npm run analyze ./your-prbs-stream.bin
 ```
 
 ```
-File:        ./test/gf-structured.bin
+File:        test/gf-structured.bin
 Size:        1,048,576 bytes
 Entropy:     7.888 bits/byte
 Structured:  100.0% algebraic
@@ -42,11 +42,19 @@ Verdict:     100% algebraically structured — compresses extremely well (LFSR/P
 ────────────────────────────────────────────────────────────
 Segments (11):
   +       0 [ 262,140 B]  PRBS-8 m-sequence (maximal-length, perfect)  noise 0.0%  coeffs [0x03]
-  +  262140 [ 262,144 B]  L=2 LFSR (exact, period unknown)              noise 0.0%  coeffs [0x1b,0x4e]
-  +  524284 [ 237,249 B]  L=3 LFSR (~2.0% noise)                       noise 2.0%  coeffs [0x57,0x2f,0x11]
-  +  786433 [ 131,071 B]  order 85 (period 85)                          noise 0.0%  coeffs [0x07]
+  +  262140 [ 262,144 B]  L=2 GF test sequence (exact)  noise 0.0%  coeffs [0x1b,0x4e]
+  +  524284 [  28,679 B]  L=3 GF test sequence (~1.9% noise)  noise 1.9%  coeffs [0x57,0x2f,0x11]
+  +  552963 [  24,570 B]  L=3 GF test sequence (~2.0% noise)  noise 2.0%  coeffs [0x57,0x2f,0x11]
+  +  577533 [  20,484 B]  L=3 GF test sequence (~2.2% noise)  noise 2.2%  coeffs [0x57,0x2f,0x11]
+  +  598017 [  49,148 B]  L=3 GF test sequence (~2.0% noise)  noise 2.0%  coeffs [0x57,0x2f,0x11]
+  +  647165 [  86,023 B]  L=3 GF test sequence (~2.1% noise)  noise 2.1%  coeffs [0x57,0x2f,0x11]
+  +  733188 [  28,665 B]  L=3 GF test sequence (~1.9% noise)  noise 1.9%  coeffs [0x57,0x2f,0x11]
+  +  761853 [  24,580 B]  L=3 GF test sequence (~1.7% noise)  noise 1.7%  coeffs [0x57,0x2f,0x11]
+  +  786433 [ 131,071 B]  order 85 (period 85)  noise 0.0%  coeffs [0x07]
   +  917504 [ 131,072 B]  PRBS-8 m-sequence (maximal-length, perfect)  noise 0.0%  coeffs [0xe3]
 ```
+
+(The noisy L=3 region above is now split into several sub-chunks by the adaptive chunker rather than staying as one — a side effect of this session's encoder changes affecting where chunk-stability boundaries land. Still 11 top-level segments, still the same coefficients recognized throughout.)
 
 `--analyze` tells you *what algebraic structure is present*, even if you're not planning to compress. The verdict drives the routing decision: structured data → compress here; unstructured data → fall back to zstd/brotli.
 
@@ -61,58 +69,82 @@ The **Berlekamp-Massey algorithm** finds the shortest such recurrence (the minim
 
 ### Encoding pipeline
 
+Every candidate representation below is generated and scored by a cheap
+estimate first; only the top few finalists are actually serialized (including
+their real deflate/brotli-compressed residual size), and the smallest **actual**
+wire size wins — not the first representation that merely beats raw. This
+matters because, e.g., an LFSR fit and an exact-cyclic fit can both "beat raw"
+for the same bytes while differing 20%+ in final size.
+
 ```
 Input bytes
   │
   ├─ Adaptive chunking  (splits at entropy discontinuities; boundaries refined ±4 bytes)
   │
-  └─ Per chunk — 15 encoding paths tried in order:
-       ├─  1. Padé [k/L] search  (tries offsets 0..32, finds best k + shortest L)
-       ├─  2. Approx L=1  (brute-forces all 255 GF coefficients for noisy L=1 data)
-       ├─  3. Approx L=2  (voting over GF quadruples, covers up to ~28% byte noise)
-       ├─  4. Approx L=3  (voting over quintuple pairs, covers up to ~23% byte noise)
-       ├─  5. Approx L=4,5  (sub-sequence BM voting for higher-order LFSRs)
-       ├─  6. Affine L=1  (y[n] = c·y[n-1] ⊕ b via shift normalisation to pure L=1)
-       ├─  7. Cyclic  (exact period detection for lookup tables and repeating patterns)
-       ├─ 8-10. Delta transforms  (XOR-diff, ADD-diff, XOR-2nd-diff → re-run paths 1-7)
+  └─ Per chunk — candidates generated, then the smallest actual wire size wins:
+       ├─  Padé [k/L] search  (tries offsets 0..32, finds best k + shortest L)
+       ├─  Approx L=1..5  (brute-force / voting / sub-sequence BM — covers ~17-28% byte noise)
+       │   (skipped once an exact fit at order ≤5 is already found — it can't be beaten)
+       ├─  GF(2^16) word-level BM  (for 16-bit ADC/DAC/audio samples)
+       ├─  Affine L=1  (y[n] = c·y[n-1] ⊕ b via shift normalisation to pure L=1)
+       ├─  Cyclic  (exact period detection for lookup tables and repeating patterns)
+       ├─  Approximate cyclic  (period + sparse residual, majority-vote template —
+       │   only tried when exact cyclic fails; handles "ABCABCXBCABCABC"-style noise)
+       ├─  Delta transforms  (XOR-diff, ADD-diff, XOR-2nd-diff, re-run against the paths above)
        │        Gated: only attempted when entropy is high AND algebraicity score is low.
-       ├─ 11-13. Interleave m=2,3,4  (split byte lanes → encode independently → merge)
-       │         Gated: BM pre-screen on each lane to avoid spending time on random data.
-       ├─ 14. Bit-plane decomposition  (each of 8 bit planes encoded independently)
+       ├─  Interleave m=2,3,4  (split byte lanes → encode independently → merge;
+       │   each lane may itself be delta-wrapped if that reveals structure, e.g. a counter lane)
+       ├─  Bit-plane decomposition  (each of 8 bit planes encoded independently, same delta option)
        │      Gated: BM pre-screen per plane; useful for ADC/DAC samples and firmware images.
-       └─ 15. Raw passthrough  (if no representation is smaller)
+       └─  Raw passthrough  (kept as a candidate throughout, wins if nothing else does)
 ```
 
-Each approximate path (2–5) applies **seed denoising** after finding the LFSR polynomial: sweeps all 256 candidate values for each seed byte and picks the one that minimises the total residual, removing systematic init-window errors in O(L×256×N).
+Each approximate path applies **seed denoising** after finding the LFSR polynomial: sweeps all 256 candidate values for each seed byte and picks the one that minimises the total residual, removing systematic init-window errors in O(L×256×N).
 
-**Dual pre-gate** controls whether transform paths 8–14 run at all:
+**Sparse residuals** compete across several encodings, not just one — interleaved position/value pairs (VarInt-delta), split position/value streams, and Rice/Golomb bit-packed positions all get tried, and whichever compresses smallest (after deflate/brotli) is kept.
+
+**Repeated LFSR models** (the same coefficients recurring later in the file, with unrelated data in between) get deduplicated into a file-level model table when the arithmetic says it saves bytes — chunks then store a 2-byte model reference instead of repeating the coefficients.
+
+**Dual pre-gate** controls whether the delta/interleave/bitplane transform paths run at all:
 - Gate 1 (entropy): skip if data is already statistically compressible (H < 60% of raw) — text, headers, already-compressed bytes.
 - Gate 2 (algebraicity): skip if data is too random-like, measured by BM complexity fluctuation across sliding 16-byte windows. High fluctuation = crypto/noise → transforms won't help.
 
-Only data that is both high-entropy AND algebraically structured reaches paths 8–14. This is precisely the class that benefits from transform-based encoding.
+Only data that is both high-entropy AND algebraically structured reaches the transform paths. This is precisely the class that benefits from transform-based encoding.
 
-### Wire format (v4)
+### Wire format (v4 / v5)
 
 ```
-File header:  [4] magic "PAD4"  [4] originalSize  [4] chunkCount
+File header:  [4] magic "PAD4" or "PAD5"  [4] originalSize  [4] chunkCount
+              PAD5 only: [2] modelCount  modelCount × { [2] L  [L] coeffs }
 
-Raw chunk:    [1] kind=0  [4] dataLen  [N] data  [4] CRC32
+Raw chunk:       [1] kind=0  [4] dataLen  [N] data  [4] CRC32
 
-LFSR chunk:   [1] kind=1  [4] origLen  [1] prefixLen  [P] prefix
-              [2] lfsrLen L  [L] coefficients  [L] seed bytes
-              [1] residual flag: 0=plain sparse  1=deflate-raw  2=brotli
-              [payload]  [4] CRC32
+LFSR chunk:      [1] kind=1  [4] origLen  [1] prefixLen  [P] prefix
+                 [2] lfsrLen L  [L] coefficients  [L] seed bytes
+                 [1] residual flag: 0=plain sparse  1=deflate-raw  2=brotli
+                 [payload]  [4] CRC32
 
-Cyclic chunk: [1] kind=2  [4] origLen  [2] period P  [P] cycle_bytes  [4] CRC32
+Cyclic chunk:    [1] kind=2  [4] origLen  [2] period P  [P] cycle_bytes  [4] CRC32
 
-Delta chunk:  [1] kind=3  [4] origLen  [1] deltaId  [4] innerLen  [inner]  [4] CRC32
-Affine chunk: [1] kind=4  [4] origLen  [1] k        [4] innerLen  [inner]  [4] CRC32
+Delta chunk:     [1] kind=3  [4] origLen  [1] deltaId  [4] innerLen  [inner]  [4] CRC32
+Affine chunk:    [1] kind=4  [4] origLen  [1] k        [4] innerLen  [inner]  [4] CRC32
 
-Interleave:   [1] kind=5  [4] origLen  [1] m
-              m × { [4] laneLen  [lane bytes] }  [4] CRC32
+Interleave:      [1] kind=5  [4] origLen  [1] m
+                 m × { [4] laneLen  [lane bytes] }  [4] CRC32   (a lane may itself be a delta chunk)
 
-Bitplane:     [1] kind=6  [4] origLen  [1] planeCount (always 8)
-              8 × { [4] planeLen  [plane bytes] }  [4] CRC32
+Bitplane:        [1] kind=6  [4] origLen  [1] planeCount (always 8)
+                 8 × { [4] planeLen  [plane bytes] }  [4] CRC32   (a plane may itself be a delta chunk)
+
+LFSR16 chunk:    [1] kind=7  [4] origLen  [1] L16  [L16×2] coeffs (uint16 LE)
+                 [L16×2] seed (uint16 LE)  [1] residual flag  [payload]  [4] CRC32
+
+ApproxCyclic:    [1] kind=8  [4] origLen  [2] period P  [P] cycle
+                 [1] residual flag  [payload]  [4] CRC32
+
+LFSRRef (PAD5):  [1] kind=9  [4] origLen  [1] prefixLen  [P] prefix
+                 [2] modelId  [L] seed bytes  [1] residual flag  [payload]  [4] CRC32
+                 (L looked up from the model table — same layout as an LFSR chunk
+                 minus the inline coefficients)
 
 EOF sentinel: [1] 0xFE
 
@@ -120,7 +152,9 @@ XDNI index:   [4] "XDNI"  [4] chunkCount  [N×8] entries  [4] indexOffset
               Each entry: [4] chunkOffset  [4] origLen
 ```
 
-Residuals are XOR of predicted vs actual bytes. Perfect recurrences produce empty residuals. For noisy data the residual is sparse-encoded as delta-compressed position-value pairs, then optionally deflate/brotli compressed — whichever is smallest wins.
+Residuals are XOR of predicted vs actual bytes. Perfect recurrences produce empty residuals. Noisy residuals compete across five sparse encodings — dense fallback, uint16/uint32 position-value pairs, VarInt-delta pairs, split position/value streams, and Rice/Golomb bit-packed positions — and whichever wins is then optionally deflate/brotli compressed on top, again picking whichever is smallest.
+
+The outermost wrapper is also a competition: raw PAD bytes vs gzip vs brotli (marker-byte prefixed, since brotli has no self-describing magic), whichever comes out smallest.
 
 ---
 
@@ -229,18 +263,24 @@ readable.pipe(createCompressStream()).pipe(writable)
 
 ## Benchmarks
 
-Run on an Apple M-series machine.
+The rows below marked with a machine are re-measured after this session's
+Priorities 1-8 (actual-size candidate selection, approximate cyclic, split/Rice
+residuals, model dictionary, lane-delta composition, brotli wrapper). The
+`/bin/ls` and dictionary-text rows predate that work and were measured on macOS
+— they aren't reproducible on this Windows dev box, so they're left as the
+last known numbers; expect the text row to improve somewhat now that the
+outer wrapper competes brotli against gzip (Priority 7), which favors text.
 
 ```
-GF(2⁸) geometric (L=1, perfect)      4 096 B →     ~12 B  (~0.3%)  encode 2ms    decode <1ms
-Noisy GF (L=1, 5% errors)            4 096 B →    ~400 B  (~9.8%)  encode 3ms    decode <1ms
-Padé offset (16-byte noise prefix)   4 096 B →     ~50 B  (~1.2%)  encode 3ms    decode <1ms
-Mixed LFSR (L=1/2/3 + 8% noise) 1 048 576 B →  11 503 B  ( 1.1%)  encode 310ms  decode 30ms
-Binary executable (/bin/ls)         154 624 B →  29 875 B  (19.3%) encode 136ms  decode 4ms
-Natural language text (/usr/share/dict/words) →  ~100.1%           (no LFSR structure found)
+GF(2⁸) geometric (L=1, perfect)          4 096 B →      49 B  ( 1.2%)  encode  31ms  decode  2ms   [Windows]
+Noisy GF (L=1, 5% errors)                4 096 B →     428 B  (10.4%)  encode  18ms  decode  1ms   [Windows]
+Padé offset (16-byte noise prefix)       4 096 B →      65 B  ( 1.6%)  encode   4ms  decode <1ms   [Windows]
+Mixed LFSR (L=1/2/3 + 8% noise)      1 048 576 B →  10 212 B  ( 1.0%)  encode ~4.2s  decode  47ms  [Windows]
+Binary executable (/bin/ls)               154 624 B →  29 875 B  (19.3%) encode 136ms  decode  4ms   [macOS, pre-session]
+Natural language text (/usr/share/dict/words) →  ~100.1%           (no LFSR structure found)          [macOS, pre-session]
 ```
 
-Decode is always near-instant — LFSR replay is a tight arithmetic loop with no branching.
+Decode is always near-instant — LFSR replay is a tight arithmetic loop with no branching. Encode got meaningfully slower on the 1MB mixed file (was ~310ms) — Priority 1 evaluates multiple representations per chunk and picks the smallest by actual serialized size instead of the first one that beats raw, which is inherently more work; a short-circuit for clean exact fits and memoized residual compression keep it from being worse than that.
 
 ---
 
@@ -263,21 +303,27 @@ src/
     transform.ts          Dual pre-gate (entropy + algebraicity score), delta transforms
     analysis.ts           analyzeBuffer(), formatAnalysis()
     bitplane.ts           splitBitplanes / mergeBitplanes (8-plane decomposition)
+    cyclic.ts             Approximate cyclic detection: bounded period search + majority-vote template (+ .test.ts)
     gf-poly.ts            GF polynomial utilities: factorRoots, polyFromRoots (+ .test.ts)
   codec/
-    encoder.ts            15-path encoding pipeline
-    decoder.ts            LFSR replay + residual XOR; cyclic/interleave/bitplane decode
-    format.ts             Binary serialization (format v4: PAD4, CRC32, XDNI index)
+    encoder.ts            Candidate-based encoding pipeline (actual-size selection, not first-match)
+    candidates.ts         EncodeCandidate type + pickBest() — cheap estimate → top-K → real size
+    decoder.ts            LFSR replay + residual XOR; cyclic/approx-cyclic/interleave/bitplane decode
+    format.ts             Binary serialization (PAD4/PAD5, CRC32, XDNI index, LFSR model dictionary)
     chunker.ts            Entropy-adaptive chunking with ±4 boundary refinement (+ .test.ts)
     stream.ts             Node.js streaming interface
     worker-pool.ts        Worker thread pool for parallel chunk encoding
     worker-entry.ts       Worker thread entry point
   utils/
-    sparse.ts             Sparse residual encoding (empty / pairs / dense) (+ .test.ts)
+    sparse.ts             Sparse residual encoding: dense / pairs / VarInt / split streams / Rice-coded (+ .test.ts)
     buffer.ts             Byte utilities
     math.ts               Misc math helpers
+  experimental/
+    syndrome-residual.ts  Reed-Solomon-style syndrome residual prototype — NOT wired into production (+ .test.ts)
 scripts/
   gen-gf-file.ts          Generates a synthetic GF-structured test binary
+  bench-priority1.ts      Deterministic benchmark corpus for actual-size candidate selection
+  bench-syndrome.ts       Benchmarks the syndrome-residual prototype against the production sparse formats
 test/
   gf-structured.bin       1MB synthetic GF file (L=1/2/3 segments + noise)
 examples/
@@ -308,17 +354,31 @@ examples/
 
 **Noisy-init offset search** — If the first L bytes of a chunk happen to be noise, the LFSR prediction diverges immediately. The approximate paths probe offsets 1..8 and store the noisy prefix verbatim, finding a clean seed window.
 
-**Cyclic / exact period encoding** — For data with exact period P (lookup tables, counter arrays, repeating test patterns), stores a single cycle. Runs after all LFSR paths so geometric sequences still use the smaller LFSR form.
+**Actual-size candidate selection** — Every encode path (LFSR at every order, cyclic, delta wrapping) produces a candidate scored by a cheap estimate; only the top few are actually serialized (including real residual compression), and the smallest real wire size wins. Earlier this was first-match: whichever path succeeded first was kept even if a later path would have been smaller — e.g. a low-order LFSR fit and an exact-cyclic fit can both beat raw for the same bytes while differing 20%+ in final size.
+
+**Cyclic / exact period encoding** — For data with exact period P (lookup tables, counter arrays, repeating test patterns), stores a single cycle. Competes against LFSR candidates on actual size rather than running only when no LFSR fit was found.
+
+**Approximate cyclic encoding** — Generalizes exact period detection to periodicity plus sparse noise ("ABCABCXBCABCABC"). A two-phase bounded search — a cheap adjacent-repeat mismatch scan across candidate periods, then majority-vote template construction (per-position, across all repeats, not just the first) for the few best candidates — finds the period and template robust to noise landing anywhere, including the first repeat.
 
 **Delta transforms** — XOR-first-difference, ADD-first-difference (mod 256), and XOR-second-difference are tried on chunks that pass the dual pre-gate. ADD-diff catches counter sequences that are linear over integers but not over GF(2⁸). Each is fully invertible; the transform ID is stored in the wire format.
 
-**Interleave m=2,3,4** — Splits a byte stream into m lanes (bytes 0,m,2m,… / 1,m+1,2m+1,… / …) and encodes each independently. Useful when even-byte and odd-byte lanes carry different LFSR generators. A short BM complexity pre-screen (cap=5, window=20) skips non-LFSR lanes cheaply before committing to full encoding.
+**Interleave m=2,3,4** — Splits a byte stream into m lanes (bytes 0,m,2m,… / 1,m+1,2m+1,… / …) and encodes each independently. Useful when even-byte and odd-byte lanes carry different LFSR generators. A short BM complexity pre-screen (cap=5, window=20) skips non-LFSR lanes cheaply before committing to full encoding — the pre-screen also checks each lane after a delta transform, so a lane like an arithmetic counter (not directly GF(2^8)-linear, but constant after ADD-delta) isn't rejected before it gets a chance.
+
+**Lane/plane delta composition** — An interleave or bitplane lane can be one delta transform deep (`interleave → delta → LFSR`), the one composition the original pipeline's `delta(interleave)` / `delta(bitplane)` wrapping didn't cover. Bounded to depth 1 beyond the lane's own structural search, using the same actual-size competition as the top-level delta wrap.
 
 **Bit-plane decomposition** — Splits each byte into its 8 bit planes (bit b of every input byte → plane b). Each plane is encoded independently as a 0/1 byte sequence. Useful when different bit planes carry distinct linear structures — ADC/DAC samples (MSB planes carry magnitude patterns, LSBs are noisier), firmware images (opcode MSBs periodic, operand LSBs random). Same BM pre-screen gate as interleave.
 
-**Dual pre-gate** — Transform paths 8–14 are gated by two fast checks before any expensive work: (1) entropy gate rejects already-statistically-compressible data (huffman estimate < 60% of raw); (2) algebraicity gate rejects random-like data by measuring how consistently BM complexity behaves across sliding 16-byte windows. Only data that is simultaneously high-entropy and algebraically structured reaches the transform paths.
+**Dual pre-gate** — The delta/interleave/bitplane transform paths are gated by two fast checks before any expensive work: (1) entropy gate rejects already-statistically-compressible data (huffman estimate < 60% of raw); (2) algebraicity gate rejects random-like data by measuring how consistently BM complexity behaves across sliding 16-byte windows. Only data that is simultaneously high-entropy and algebraically structured reaches the transform paths.
 
 **Wire format v4 (PAD4)** — Adds per-chunk CRC32, an EOF sentinel byte, and an XDNI index trailer (chunk offsets + original lengths) for O(1) random-access seek to any chunk. All chunk kinds use the same CRC placement (4 bytes after the chunk payload).
+
+**Wire format v5 (PAD5) — LFSR model dictionary** — When the same GF(2^8) LFSR coefficient array recurs in non-adjacent chunks (adjacent runs are already merged), a file-level model table lets those chunks store a 2-byte model reference instead of repeating the coefficients. Only switches to PAD5 when the computed net savings (`L×(reuseCount-1) - tableOverhead`) are actually positive — plain PAD4 files pay zero overhead for this feature. Legacy PAD3/PAD4 files still decode unchanged.
+
+**Split and Rice-coded sparse residuals** — Beyond interleaved position-value pairs, residuals can also be stored as two separate streams (positions, then values — better locality for the outer deflate/brotli pass) or with positions Rice/Golomb bit-packed (beats VarInt's 1-2 byte granularity on typical gap distributions). Both are always more expensive in raw bytes than the interleaved format, so they're only worth trying — and only actually compress smaller — past a minimum pair-count floor; below that, the encoder doesn't bother.
+
+**Full-file wrapper competition** — The final output is whichever of {raw PAD bytes, gzip, brotli} is smallest. Brotli has no simple universal magic like gzip's `1f 8b`, so a brotli-wrapped file gets a 1-byte marker chosen to collide with neither gzip's nor PAD's leading byte.
+
+**Syndrome-based residual encoding (prototyped, not enabled)** — `src/experimental/syndrome-residual.ts` implements Reed-Solomon-style syndrome decoding (Berlekamp-Massey + Chien search + Forney's algorithm) as an alternative sparse-residual format: store 2t syndromes instead of (position, value) pairs. Correctness-verified, but benchmarked as a net loss once realistic residual sizes and error distributions are accounted for — see the comment at the top of that file and `scripts/bench-syndrome.ts`.
 
 **Polynomial factoring** — `gf-poly.ts` provides the full round-trip: `factorRoots` decomposes an LFSR minimal polynomial into its GF(2⁸) roots (when they're all distinct); `polyFromRoots` reconstructs the polynomial from roots via ∏(x + αᵢ). Together they enable inspecting whether a higher-order LFSR is a sum of independent geometric sequences.
 
@@ -326,7 +386,7 @@ examples/
 
 **Worker thread pool** — `compressAsync` distributes chunks across a pool of worker threads (defaults to `availableParallelism()`). Falls back to synchronous encoding if workers can't initialise.
 
-**Sparse + deflate residuals** — Non-zero residual bytes are encoded as delta-compressed position-value pairs. For a chunk with 350 errors scattered across 4 096 bytes the average gap is ~12, meaning 75% of the uint32 gap bytes are zero — the resulting packed block compresses from ~1 KB down to ~50 bytes under deflate-9.
+**Sparse + deflate residuals** — Non-zero residual bytes are encoded as delta-compressed position-value pairs by default. For a chunk with 350 errors scattered across 4 096 bytes the average gap is ~12, meaning 75% of the uint32 gap bytes are zero — the resulting packed block compresses from ~1 KB down to ~50 bytes under deflate-9. This is the baseline the split-stream and Rice-coded formats above compete against.
 
 **PRBS recognition** — The `--analyze` output identifies degree-1 LFSRs whose coefficient has multiplicative order 255 (primitive elements → PRBS-8 m-sequences, period 255). Other periods (85, 51, 17, 15, 5, 3, 1) are named by their order in GF(2⁸)*.
 
@@ -344,10 +404,12 @@ examples/
 
 ```bash
 npm run build                          # TypeScript compile + native addon
-npm test                               # 121 unit tests across 7 test files
+npm test                               # 184 unit tests across 15 test files
 npm run demo                           # Synthetic roundtrip demo
 npx tsx src/cli.ts bench <file>        # Benchmark any file
 npx tsx src/cli.ts analyze <file>      # Algebraic structure report
+npx tsx scripts/bench-priority1.ts     # Actual-size candidate selection benchmark corpus
+npx tsx scripts/bench-syndrome.ts      # Syndrome-residual prototype vs production sparse formats
 npm run build:exe                      # Build a self-contained executable for the current platform
 ```
 
@@ -363,4 +425,4 @@ git tag v0.1.2 && git push origin v0.1.2
 
 This triggers `.github/workflows/release.yml`, which builds on `windows-latest`, `ubuntu-latest`, and `macos-latest` and publishes all three archives to the GitHub release automatically.
 
-121 tests across 7 test files covering sparse encoding, Padé search (via C addon), GF polynomial round-trips, approximate LFSR detection (L=1..5), chunking with boundary refinement, dual pre-gate (entropy + algebraicity), and end-to-end roundtrips.
+184 tests across 15 test files covering sparse encoding (dense/pairs/VarInt/split/Rice), Padé search (via C addon), GF polynomial round-trips, approximate LFSR detection (L=1..5), approximate cyclic detection, chunking with boundary refinement, dual pre-gate (entropy + algebraicity), actual-size candidate selection, the LFSR model dictionary, lane-delta composition, the full-file wrapper competition, the syndrome-residual prototype, and end-to-end roundtrips.
