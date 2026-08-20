@@ -52,11 +52,11 @@
     "compress": "tsx src/cli.ts compress",
     "decompress": "tsx src/cli.ts decompress",
     "analyze": "tsx src/cli.ts analyze",
-    "analyze:c": "c/gf-analyze",
+    "analyze:c": "node scripts/run-gf-analyze.cjs",
     "bench": "tsx src/cli.ts bench",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:file": "npm run compress ./test/gf-structured.bin ./test/gf-structured-compressed.bin && npm run decompress ./test/gf-structured-compressed.bin ./test/gf-structured-result.bin && c/gf-analyze ./test/gf-structured.bin",
+    "test:file": "npm run compress ./test/gf-structured.bin ./test/gf-structured-compressed.bin && npm run decompress ./test/gf-structured-compressed.bin ./test/gf-structured-result.bin && node scripts/run-gf-analyze.cjs ./test/gf-structured.bin",
     "prepublishOnly": "npm run build",
     "build:exe": "npm run build && node-gyp rebuild && npx @yao-pkg/pkg dist/src/cli.js --target node20 --output pade-compress"
   },
