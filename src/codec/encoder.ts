@@ -12,16 +12,19 @@
 //   14. Bitplane (high-entropy gate, BM pre-screen per plane)
 //   15. Raw passthrough
 
-import { Chunk, SimpleChunk, LFSRChunk, RawChunk, CyclicChunk, CompressedFile, GFElem, LFSR, LFSR16Chunk, NonDeltaChunk } from "../types"
+import { Chunk, SimpleChunk, LaneChunk, LFSRChunk, RawChunk, CyclicChunk, ApproxCyclicChunk, CompressedFile, GFElem, LFSR, LFSR16Chunk, NonDeltaChunk, AffineChunk, DeltaChunk, InterleaveChunk, BitplaneChunk } from "../types"
 import { toSeq, fromSeq, xorBytes } from "../utils/buffer"
 import { isCompressible } from "../core/entropy"
 import { findBestPade, findApproxL1, findApproxL2, findApproxL3, findApproxL4, findApproxL5, findApproxAffineL1, refinedSize } from "../core/pade"
 import { shouldTryTransforms, DELTA_TRANSFORMS } from "../core/transform"
+import { findApproxCyclic } from "../core/cyclic"
+import { packedResidualSize } from "../utils/sparse"
 import { splitInterleave } from "../utils/interleave"
 import { splitBitplanes } from "../core/bitplane"
 import { adaptiveChunks } from "./chunker"
 import { serializeChunk, deserializeChunk } from "./format"
 import { addon } from "../native/addon"
+import { EncodeCandidate, pickBest } from "./candidates"
 
 const runLFSR = (lfsr: LFSR, init: GFElem[], n: number): GFElem[] =>
   Array.from(addon.lfsrRun(lfsr.coeffs, Buffer.from(init), n))
@@ -87,6 +90,22 @@ const detectCyclic = (seq: GFElem[]): Uint8Array | null => {
   return null
 }
 
+// Priority 2: approximate cyclic candidate — periodicity + sparse residual.
+// Only attempted when exact periodicity (detectCyclic) failed: an exact zero-
+// residual fit at a given period can't be beaten by an approximate fit that
+// tolerates residual at the very same or a related period, so trying both on
+// every chunk would just double the period-search cost for no benefit.
+const approxCyclicCandidate = (chunk: Uint8Array, rSize: number): EncodeCandidate | null => {
+  const approx = findApproxCyclic(chunk)
+  if (!approx) return null
+  const est = 1 + 4 + 2 + approx.cycle.length + packedResidualSize(approx.residual)
+  if (est >= rSize) return null
+  const approxCyclicChunk = {
+    kind: "approx-cyclic", cycle: approx.cycle, residual: approx.residual, originalLength: chunk.length,
+  } satisfies ApproxCyclicChunk
+  return { chunk: approxCyclicChunk, estimatedSize: est, label: "approx-cyclic" }
+}
+
 const buildLFSRChunk = (
   chunk: Uint8Array,
   seq: GFElem[],
@@ -136,14 +155,20 @@ const encodeApproxWithOffset = (
 
 // Rough wire-size estimate for a simple chunk, without running deflate.
 const estimateSimpleBytes = (c: SimpleChunk): number => {
-  if (c.kind === "raw")    return 1 + 4 + c.data.length
-  if (c.kind === "cyclic") return 1 + 4 + 2 + c.cycle.length
+  if (c.kind === "raw")           return 1 + 4 + c.data.length
+  if (c.kind === "cyclic")        return 1 + 4 + 2 + c.cycle.length
+  if (c.kind === "approx-cyclic") return 1 + 4 + 2 + c.cycle.length + packedResidualSize(c.residual)
   return refinedSize(c.prefix.length, c.lfsr.length, c.residual)
 }
 
+// Rough wire-size estimate for a lane/plane entry — a SimpleChunk, or one delta
+// transform deep (Priority 6's "interleave/bitplane → delta → LFSR").
+const estimateLaneBytes = (c: LaneChunk): number =>
+  c.kind === "delta" ? 1 + 4 + 1 + 4 + estimateSimpleBytes(c.inner as SimpleChunk) : estimateSimpleBytes(c)
+
 // Rough wire-size estimate for any NonDeltaChunk (used to evaluate delta wrappers).
 const estimateNonDeltaBytes = (c: NonDeltaChunk): number => {
-  if (c.kind === "raw" || c.kind === "cyclic" || c.kind === "lfsr")
+  if (c.kind === "raw" || c.kind === "cyclic" || c.kind === "lfsr" || c.kind === "approx-cyclic")
     return estimateSimpleBytes(c)
   if (c.kind === "lfsr16") {
     const L16 = c.coeffs.length
@@ -154,9 +179,9 @@ const estimateNonDeltaBytes = (c: NonDeltaChunk): number => {
   if (c.kind === "affine")
     return 1 + 4 + 1 + 4 + estimateSimpleBytes(c.inner)
   if (c.kind === "interleave")
-    return 1 + 4 + 1 + c.lanes.reduce((s, l) => s + 4 + estimateSimpleBytes(l), 0)
+    return 1 + 4 + 1 + c.lanes.reduce((s, l) => s + 4 + estimateLaneBytes(l), 0)
   // bitplane
-  return 1 + 4 + 1 + c.planes.reduce((s, p) => s + 4 + estimateSimpleBytes(p), 0)
+  return 1 + 4 + 1 + c.planes.reduce((s, p) => s + 4 + estimateLaneBytes(p), 0)
 }
 
 const withDenoise = (
@@ -167,26 +192,51 @@ const withDenoise = (
   return { lfsr: r.lfsr, init: needsDenoise ? denoiseSeed(sub, r.lfsr.coeffs, r.init) : r.init }
 }
 
-// ── searchLFSR: paths 1-5 (exact + approx L=1..5) ────────────────────────────
+// ── searchLFSRCandidates: paths 1-5 (exact + approx L=1..5) ──────────────────
 //
-// Shared by both encodeChunkCore and encodeChunk to avoid duplicating these
-// five paths in two places.
-const searchLFSR = (chunk: Uint8Array, seq: GFElem[]): LFSRChunk | null => {
+// Shared by both encodeChunkCore and encodeChunkInner. Collects every LFSR
+// representation that beats raw by its own cheap estimate — exact BM and each
+// approximate order L=1..5 — instead of returning the first one found, so the
+// caller can pick the smallest by actual serialized size (Priority 1).
+const APPROX_FINDERS: ReadonlyArray<{
+  readonly label: string
+  readonly L: number
+  readonly find: (sub: GFElem[]) => { lfsr: LFSR; init: GFElem[]; nonZeroCount: number } | null
+}> = [
+  { label: "approxL1", L: 1, find: findApproxL1 },
+  { label: "approxL2", L: 2, find: findApproxL2 },
+  { label: "approxL3", L: 3, find: findApproxL3 },
+  { label: "approxL4", L: 4, find: findApproxL4 },
+  { label: "approxL5", L: 5, find: findApproxL5 },
+]
+
+// Highest order APPROX_FINDERS searches. Exact BM (Berlekamp-Massey) always
+// reproduces the sequence with zero residual by construction — so when the exact
+// fit already has order ≤ MAX_APPROX_L, no approximate search over the same order
+// range can possibly beat it (residual-tolerant search cannot improve on zero
+// residual at an order it could itself have reached). Skipping approx in that case
+// avoids ~5 extra native searches per chunk for the common clean-LFSR case.
+const MAX_APPROX_L = 5
+
+const searchLFSRCandidates = (chunk: Uint8Array, seq: GFElem[]): EncodeCandidate[] => {
+  const candidates: EncodeCandidate[] = []
+
   const { offset, lfsr, init } = findBestPade(seq)
   if (isCompressible(chunk, lfsr.length)) {
     const candidate = buildLFSRChunk(chunk, seq, offset, lfsr, init)
-    if (refinedSize(offset, lfsr.length, candidate.residual) < rawSize(chunk.length))
-      return candidate
+    const size = refinedSize(offset, lfsr.length, candidate.residual)
+    if (size < rawSize(chunk.length)) {
+      candidates.push({ chunk: candidate, estimatedSize: size, label: "exact" })
+      if (lfsr.length <= MAX_APPROX_L) return candidates
+    }
   }
 
-  return (
-    encodeApproxWithOffset(sub => { const r = findApproxL1(sub); return r ? withDenoise(r, sub) : null }, seq, chunk, 1) ??
-    encodeApproxWithOffset(sub => { const r = findApproxL2(sub); return r ? withDenoise(r, sub) : null }, seq, chunk, 2) ??
-    encodeApproxWithOffset(sub => { const r = findApproxL3(sub); return r ? withDenoise(r, sub) : null }, seq, chunk, 3) ??
-    encodeApproxWithOffset(sub => { const r = findApproxL4(sub); return r ? withDenoise(r, sub) : null }, seq, chunk, 4) ??
-    encodeApproxWithOffset(sub => { const r = findApproxL5(sub); return r ? withDenoise(r, sub) : null }, seq, chunk, 5) ??
-    null
-  )
+  for (const { label, L, find } of APPROX_FINDERS) {
+    const candidate = encodeApproxWithOffset(sub => { const r = find(sub); return r ? withDenoise(r, sub) : null }, seq, chunk, L)
+    if (candidate) candidates.push({ chunk: candidate, estimatedSize: estimateSimpleBytes(candidate), label })
+  }
+
+  return candidates
 }
 
 // ── tryLFSR16: GF(2^16) path (path 0) ────────────────────────────────────────
@@ -223,18 +273,62 @@ const tryLFSR16 = (chunk: Uint8Array): LFSR16Chunk | null => {
 // ── encodeChunkCore: structural paths only (LFSR + cyclic) ───────────────────
 //
 // Used when encoding transformed or interleaved/bitplane sub-sequences where
-// wrapper overhead is already accounted for by the caller.
+// wrapper overhead is already accounted for by the caller. Collects every
+// candidate that beats raw by cheap estimate and picks the smallest by actual
+// serialized size (Priority 1) instead of the first one found.
 const encodeChunkCore = (chunk: Uint8Array): SimpleChunk => {
-  const seq = toSeq(chunk)
+  const seq   = toSeq(chunk)
+  const rSize = rawSize(chunk.length)
 
-  const lfsr = searchLFSR(chunk, seq)
-  if (lfsr) return lfsr
+  const candidates: EncodeCandidate[] = [
+    { chunk: { kind: "raw", data: chunk } satisfies RawChunk, estimatedSize: rSize, label: "raw" },
+  ]
+
+  candidates.push(...searchLFSRCandidates(chunk, seq))
 
   const cycle = detectCyclic(seq)
-  if (cycle !== null && 1 + 4 + 2 + cycle.length < rawSize(chunk.length))
-    return { kind: "cyclic", cycle, originalLength: chunk.length } satisfies CyclicChunk
+  if (cycle !== null) {
+    const est = 1 + 4 + 2 + cycle.length
+    if (est < rSize)
+      candidates.push({ chunk: { kind: "cyclic", cycle, originalLength: chunk.length } satisfies CyclicChunk, estimatedSize: est, label: "cyclic" })
+  } else {
+    const approxCyclic = approxCyclicCandidate(chunk, rSize)
+    if (approxCyclic) candidates.push(approxCyclic)
+  }
 
-  return { kind: "raw", data: chunk } satisfies RawChunk
+  return pickBest(candidates) as SimpleChunk
+}
+
+// ── encodeLane: lane/plane encoder with one optional delta wrap (Priority 6) ──
+//
+// Adds the missing "interleave/bitplane → delta → LFSR" composition from the
+// prompt's beam-search examples on top of encodeChunkCore's structural search.
+// Bounded to depth 1 beyond encodeChunkCore (a lane's delta always wraps a
+// SimpleChunk, never a further nested interleave/bitplane/affine), using the
+// same actual-size candidate competition as encodeChunk's top-level delta wrap.
+const encodeLane = (chunk: Uint8Array): LaneChunk => {
+  const core  = encodeChunkCore(chunk)
+  const rSize = rawSize(chunk.length)
+
+  const candidates: EncodeCandidate[] = [
+    { chunk: core, estimatedSize: core.kind === "raw" ? rSize : estimateSimpleBytes(core), label: "lane-core" },
+  ]
+
+  if (shouldTryTransforms(chunk)) {
+    const DELTA_OVERHEAD = 10
+    for (const dt of DELTA_TRANSFORMS) {
+      const transformed = dt.apply(chunk)
+      const inner = encodeChunkCore(transformed)
+      if (inner.kind === "raw") continue
+      const est = DELTA_OVERHEAD + estimateSimpleBytes(inner)
+      if (est < rSize) {
+        const deltaChunk = { kind: "delta", deltaId: dt.id, inner, originalLength: chunk.length } satisfies DeltaChunk
+        candidates.push({ chunk: deltaChunk, estimatedSize: est, label: `lane-delta${dt.id}` })
+      }
+    }
+  }
+
+  return pickBest(candidates) as LaneChunk
 }
 
 // ── encodeChunkInner: all non-delta paths ─────────────────────────────────────
@@ -242,51 +336,76 @@ const encodeChunkCore = (chunk: Uint8Array): SimpleChunk => {
 // Used as the inner encoder for delta wrappers (depth-2 compositions like
 // delta(affine), delta(interleave), delta(lfsr16)).  Excludes delta itself
 // to prevent useless delta-of-delta nesting.
+//
+// Collects every candidate representation (GF(2^8) LFSR at every order, GF(2^16),
+// affine, cyclic) that beats raw by cheap estimate, then picks the smallest by
+// actual serialized size (Priority 1) instead of returning the first match.
+// Interleave/bitplane search is comparatively expensive — recursive per-lane/plane
+// candidate search — and rarely beats a direct whole-chunk structural match when
+// one exists, so it only runs when nothing structural was found for the chunk.
 const encodeChunkInner = (chunk: Uint8Array): NonDeltaChunk => {
   const seq   = toSeq(chunk)
   const rSize = rawSize(chunk.length)
 
+  const candidates: EncodeCandidate[] = [
+    { chunk: { kind: "raw", data: chunk } satisfies RawChunk, estimatedSize: rSize, label: "raw" },
+  ]
+
   // GF(2^8) paths first — preferred for byte-structured data (firmware, PRBS streams).
   // GF(2^16) is a fallback for word-level recurrences (ADC/DAC, 16-bit samples).
-  const lfsr = searchLFSR(chunk, seq)
-  if (lfsr) return lfsr
+  candidates.push(...searchLFSRCandidates(chunk, seq))
 
   const lfsr16 = tryLFSR16(chunk)
-  if (lfsr16) return lfsr16
+  if (lfsr16) candidates.push({ chunk: lfsr16, estimatedSize: estimateNonDeltaBytes(lfsr16), label: "lfsr16" })
 
   const affineResult = tryAffine(chunk, seq)
-  if (affineResult) return { kind: "affine", k: affineResult.k, inner: affineResult.inner, originalLength: chunk.length }
+  if (affineResult) {
+    const affineChunk = { kind: "affine", k: affineResult.k, inner: affineResult.inner, originalLength: chunk.length } satisfies AffineChunk
+    candidates.push({ chunk: affineChunk, estimatedSize: estimateNonDeltaBytes(affineChunk), label: "affine" })
+  }
 
   const cycle = detectCyclic(seq)
-  if (cycle !== null && 1 + 4 + 2 + cycle.length < rSize)
-    return { kind: "cyclic", cycle, originalLength: chunk.length } satisfies CyclicChunk
+  if (cycle !== null) {
+    const est = 1 + 4 + 2 + cycle.length
+    if (est < rSize)
+      candidates.push({ chunk: { kind: "cyclic", cycle, originalLength: chunk.length } satisfies CyclicChunk, estimatedSize: est, label: "cyclic" })
+  } else {
+    const approxCyclic = approxCyclicCandidate(chunk, rSize)
+    if (approxCyclic) candidates.push(approxCyclic)
+  }
 
-  if (shouldTryTransforms(chunk)) {
+  if (candidates.length === 1 && shouldTryTransforms(chunk)) {
     const INTERLEAVE_OVERHEAD = 6
     const BITPLANE_OVERHEAD   = 6
 
     for (const m of [2, 3, 4]) {
       const lanes = splitInterleave(chunk, m)
       if (!lanes.every(laneIsStructured)) continue
-      const encodedLanes = lanes.map(encodeChunkCore)
+      const encodedLanes = lanes.map(encodeLane)
       if (!encodedLanes.some(l => l.kind !== "raw")) continue
-      const laneBytes = encodedLanes.reduce((s, l) => s + 4 + estimateSimpleBytes(l), 0)
-      if (INTERLEAVE_OVERHEAD + laneBytes < rSize)
-        return { kind: "interleave", m, lanes: encodedLanes, originalLength: chunk.length }
+      const laneBytes = encodedLanes.reduce((s, l) => s + 4 + estimateLaneBytes(l), 0)
+      const est = INTERLEAVE_OVERHEAD + laneBytes
+      if (est < rSize) {
+        const interleaveChunk = { kind: "interleave", m, lanes: encodedLanes, originalLength: chunk.length } satisfies InterleaveChunk
+        candidates.push({ chunk: interleaveChunk, estimatedSize: est, label: `interleave${m}` })
+      }
     }
 
     const planes = splitBitplanes(chunk)
     if (planes.every(laneIsStructured)) {
-      const encodedPlanes = planes.map(encodeChunkCore)
+      const encodedPlanes = planes.map(encodeLane)
       if (encodedPlanes.some(p => p.kind !== "raw")) {
-        const planeBytes = encodedPlanes.reduce((s, p) => s + 4 + estimateSimpleBytes(p), 0)
-        if (BITPLANE_OVERHEAD + planeBytes < rSize)
-          return { kind: "bitplane", planes: encodedPlanes, originalLength: chunk.length }
+        const planeBytes = encodedPlanes.reduce((s, p) => s + 4 + estimateLaneBytes(p), 0)
+        const est = BITPLANE_OVERHEAD + planeBytes
+        if (est < rSize) {
+          const bitplaneChunk = { kind: "bitplane", planes: encodedPlanes, originalLength: chunk.length } satisfies BitplaneChunk
+          candidates.push({ chunk: bitplaneChunk, estimatedSize: est, label: "bitplane" })
+        }
       }
     }
   }
 
-  return { kind: "raw", data: chunk } satisfies RawChunk
+  return pickBest(candidates) as NonDeltaChunk
 }
 
 const tryAffine = (chunk: Uint8Array, seq: GFElem[]) => {
@@ -305,18 +424,30 @@ const BM_GATE_CAP    = 5
 
 const laneIsStructured = (lane: Uint8Array): boolean => {
   if (lane.length < 4) return false
-  return addon.bmSolve(Buffer.from(lane.subarray(0, Math.min(lane.length, BM_GATE_WINDOW)))).length <= BM_GATE_CAP
+  const window = lane.subarray(0, Math.min(lane.length, BM_GATE_WINDOW))
+  if (addon.bmSolve(Buffer.from(window)).length <= BM_GATE_CAP) return true
+  // Priority 6: also accept a lane that only looks structured after a delta
+  // transform (e.g. an arithmetic counter is trivial post ADD-delta but not
+  // directly GF(2^8)-linear) — encodeLane tries delta wrapping for this case.
+  return DELTA_TRANSFORMS.some(dt => addon.bmSolve(Buffer.from(dt.apply(window))).length <= BM_GATE_CAP)
 }
 
+// ── encodeChunk: top-level entry point ────────────────────────────────────────
+//
+// Compares the whole-chunk representation against every delta-wrapped variant
+// by actual serialized size (Priority 1), instead of returning the first delta
+// transform whose cheap estimate beats raw.
 export const encodeChunk = (chunk: Uint8Array): Chunk => {
   const rSize = rawSize(chunk.length)
 
   // ── Paths 0-7: structural paths (GF16, GF8 LFSR, affine, cyclic) + interleave/bitplane ──
   const core = encodeChunkInner(chunk)
-  if (core.kind !== "raw") return core
+
+  const candidates: EncodeCandidate[] = [
+    { chunk: core, estimatedSize: core.kind === "raw" ? rSize : estimateNonDeltaBytes(core), label: "core" },
+  ]
 
   // ── Paths 8-10: delta transforms (high-entropy + algebraic gate) ──
-  // Applied BEFORE interleave/bitplane to match original pipeline ordering.
   // Inner encoding uses encodeChunkInner (not encodeChunkCore) to enable depth-2
   // compositions: delta(affine), delta(lfsr16), delta(interleave), delta(bitplane).
   if (shouldTryTransforms(chunk)) {
@@ -326,12 +457,15 @@ export const encodeChunk = (chunk: Uint8Array): Chunk => {
       const transformed = dt.apply(chunk)
       const inner = encodeChunkInner(transformed)
       if (inner.kind === "raw") continue
-      if (DELTA_OVERHEAD + estimateNonDeltaBytes(inner) < rSize)
-        return { kind: "delta", deltaId: dt.id, inner, originalLength: chunk.length }
+      const est = DELTA_OVERHEAD + estimateNonDeltaBytes(inner)
+      if (est < rSize) {
+        const deltaChunk = { kind: "delta", deltaId: dt.id, inner, originalLength: chunk.length } satisfies DeltaChunk
+        candidates.push({ chunk: deltaChunk, estimatedSize: est, label: `delta${dt.id}` })
+      }
     }
   }
 
-  return core  // raw fallback
+  return pickBest(candidates) as Chunk
 }
 
 // Merge adjacent LFSR chunks that share identical coefficients and a continuous LFSR

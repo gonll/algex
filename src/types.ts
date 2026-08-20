@@ -37,8 +37,18 @@ export interface CyclicChunk {
   readonly originalLength: number
 }
 
-// The three chunk kinds that carry no nested chunk structure.
-export type SimpleChunk = LFSRChunk | RawChunk | CyclicChunk
+// A chunk that is only APPROXIMATELY periodic: a period P plus a sparse XOR
+// residual describing where the tiled cycle deviates from the actual bytes.
+// Generalizes CyclicChunk (zero-error periodicity) to periodicity-plus-noise.
+export interface ApproxCyclicChunk {
+  readonly kind: "approx-cyclic"
+  readonly cycle: Uint8Array     // one period (P bytes), majority-voted across all repeats
+  readonly residual: Uint8Array // length === originalLength; XOR of actual vs tiled cycle
+  readonly originalLength: number
+}
+
+// The four chunk kinds that carry no nested chunk structure.
+export type SimpleChunk = LFSRChunk | RawChunk | CyclicChunk | ApproxCyclicChunk
 
 // A chunk encoded as an LFSR over GF(2^16).
 // Treats pairs of bytes as little-endian uint16 elements.
@@ -76,11 +86,18 @@ export interface AffineChunk {
   readonly originalLength: number
 }
 
+// Priority 6: a lane/plane may optionally be one delta transform deep — the
+// "interleave/bitplane → delta → LFSR" composition. Depth beyond this is bounded
+// by construction in the encoder (encodeLane), not by the type: DeltaChunk.inner
+// is NonDeltaChunk in general, but a lane's delta is only ever built wrapping a
+// SimpleChunk result, never a further nested interleave/bitplane/affine.
+export type LaneChunk = SimpleChunk | DeltaChunk
+
 // m-way interleaved chunk: lanes encoded independently, merged on decode.
 export interface InterleaveChunk {
   readonly kind: "interleave"
   readonly m: number
-  readonly lanes: SimpleChunk[]
+  readonly lanes: LaneChunk[]
   readonly originalLength: number
 }
 
@@ -88,7 +105,7 @@ export interface InterleaveChunk {
 // encoded independently.  Decode: decode each plane → mergeBitplanes → original bytes.
 export interface BitplaneChunk {
   readonly kind: "bitplane"
-  readonly planes: SimpleChunk[]   // exactly 8 elements, index = bit position (0=LSB)
+  readonly planes: LaneChunk[]   // exactly 8 elements, index = bit position (0=LSB)
   readonly originalLength: number
 }
 

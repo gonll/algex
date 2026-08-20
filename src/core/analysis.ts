@@ -2,7 +2,7 @@
 // reports what GF(2^8) recurrence was found, noise level, and whether the
 // polynomial matches a known PRBS standard.
 
-import { LFSRChunk, CyclicChunk, Chunk } from "../types"
+import { LFSRChunk, CyclicChunk, ApproxCyclicChunk, Chunk } from "../types"
 import { encode }         from "../codec/encoder"
 import { shannonEntropy } from "./entropy"
 import { gfOrder }        from "../utils/gf256"
@@ -91,7 +91,7 @@ export interface AnalysisResult {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-const classifySegment = (chunk: LFSRChunk | CyclicChunk, offset: number): SegmentInfo => {
+const classifySegment = (chunk: LFSRChunk | CyclicChunk | ApproxCyclicChunk, offset: number): SegmentInfo => {
   if (chunk.kind === "cyclic") {
     const P = chunk.cycle.length
     return {
@@ -104,6 +104,24 @@ const classifySegment = (chunk: LFSRChunk | CyclicChunk, offset: number): Segmen
       noisePercent:  0,
       recognition:   `exact period ${P} (lookup table / repeating pattern)`,
       compressedSize: 7 + P,  // 1 kind + 4 origLen + 2 period + P bytes
+    }
+  }
+
+  if (chunk.kind === "approx-cyclic") {
+    const P = chunk.cycle.length
+    const noisePercent = chunk.originalLength > 0
+      ? (chunk.residual.filter(b => b !== 0).length / chunk.originalLength) * 100
+      : 0
+    return {
+      offset,
+      length:        chunk.originalLength,
+      kind:          "cyclic",
+      L:             null,
+      period:        P,
+      coeffs:        [],
+      noisePercent,
+      recognition:   `approximate period ${P} (~${noisePercent.toFixed(1)}% noise)`,
+      compressedSize: 7 + P + chunk.residual.filter(b => b !== 0).length,  // rough estimate
     }
   }
 
@@ -147,7 +165,7 @@ const classifySegment = (chunk: LFSRChunk | CyclicChunk, offset: number): Segmen
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-type TransformChunk = Exclude<Chunk, LFSRChunk | CyclicChunk | { kind: "raw" }>
+type TransformChunk = Exclude<Chunk, LFSRChunk | CyclicChunk | ApproxCyclicChunk | { kind: "raw" }>
 
 const describeTransformChunk = (chunk: TransformChunk): { recognition: string; noisePercent: number } => {
   if (chunk.kind === "lfsr16") {
@@ -202,7 +220,7 @@ export const analyzeBuffer = (buf: Uint8Array, filename?: string): AnalysisResul
       continue
     }
 
-    if (chunk.kind !== "lfsr" && chunk.kind !== "cyclic") {
+    if (chunk.kind !== "lfsr" && chunk.kind !== "cyclic" && chunk.kind !== "approx-cyclic") {
       const len = chunk.originalLength
       const { recognition, noisePercent } = describeTransformChunk(chunk)
       segments.push({

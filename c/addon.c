@@ -2,7 +2,19 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#define pipe(fds) _pipe((fds), 4096, _O_BINARY)
+#define dup(fd) _dup(fd)
+#define dup2(a, b) _dup2((a), (b))
+#define close(fd) _close(fd)
+#define read(fd, buf, n) _read((fd), (buf), (unsigned int)(n))
+#define STDOUT_FILENO 1
+typedef int ssize_t;
+#else
 #include <unistd.h>
+#endif
 #include "gf256.h"
 #include "gf_wide.h"
 #include "bm.h"

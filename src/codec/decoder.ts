@@ -20,6 +20,13 @@ const decodeChunk = (chunk: CompressedFile["chunks"][number]): Uint8Array => {
     return out
   }
 
+  if (chunk.kind === "approx-cyclic") {
+    const { cycle, residual, originalLength } = chunk
+    const out = new Uint8Array(originalLength)
+    for (let i = 0; i < originalLength; i++) out[i] = cycle[i % cycle.length]! ^ residual[i]!
+    return out
+  }
+
   if (chunk.kind === "delta") {
     const inner = decodeChunk(chunk.inner)
     const dt = DELTA_TRANSFORMS.find(d => d.id === chunk.deltaId)

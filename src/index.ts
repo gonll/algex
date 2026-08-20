@@ -1,27 +1,51 @@
 // Public API — compress/decompress bytes and optionally inspect the internals
 
-import { gzipSync, gunzipSync } from "zlib"
+import { gzipSync, gunzipSync, brotliCompressSync, brotliDecompressSync, constants } from "zlib"
 import { encode, encodeAsync } from "./codec/encoder"
 import { decode }              from "./codec/decoder"
 import { serialize, deserialize } from "./codec/format"
 
-// Tries gzip on the structural pade output and returns whichever is smaller.
-// Incompressible raw chunks produce pade bytes that gzip can't shrink further,
-// so the original is returned to avoid paying the ~18-byte gzip header tax.
-const smallerOfGzip = (pade: Uint8Array): Uint8Array => {
+// Priority 7: full-file wrapper competition — raw PAD vs gzip(PAD) vs brotli(PAD).
+// gzip is self-describing (magic 1f 8b) and raw PAD always starts with 'P' (0x50),
+// but brotli has no comparable universal magic, so a brotli-wrapped file gets an
+// explicit 1-byte marker prefix. Chosen to collide with neither gzip's 0x1f nor
+// PAD's 0x50 so all three forms stay distinguishable without extra metadata.
+const BROTLI_MARKER = 0xb2
+
+// Full-file brotli only runs once per compress() call (unlike the per-residual
+// pass in format.ts, which runs per chunk) — affording a higher quality setting.
+const BROTLI_FILE_QUALITY = 9
+
+// Tries gzip and brotli on the structural pade output; returns whichever is
+// smallest, including the uncompressed pade itself (incompressible raw chunks
+// can make both wrappers pay header tax for nothing).
+export const wrapSmallest = (pade: Uint8Array): Uint8Array => {
   const gz = gzipSync(pade, { level: 9 })
-  return gz.length < pade.length ? gz : pade
+  const br = brotliCompressSync(pade, { params: { [constants.BROTLI_PARAM_QUALITY]: BROTLI_FILE_QUALITY } })
+
+  let best = pade
+  if (gz.length < best.length) best = gz
+  if (br.length + 1 < best.length) {
+    const wrapped = new Uint8Array(1 + br.length)
+    wrapped[0] = BROTLI_MARKER
+    wrapped.set(br, 1)
+    best = wrapped
+  }
+  return best
 }
 
-// Synchronous full pipeline: structural GF(2^8/16) encoding → gzip wrapper if it helps.
-// Output may be gzip-wrapped (.pade inside gzip) or raw .pade — decompress() handles both.
+// Synchronous full pipeline: structural GF(2^8/16) encoding → smallest outer wrapper.
+// Output may be raw .pade, gzip-wrapped, or brotli-wrapped — decompress() handles all three.
 export const compress = (input: Uint8Array): Uint8Array =>
-  smallerOfGzip(serialize(encode(input)))
+  wrapSmallest(serialize(encode(input)))
 
 // Decompresses output from compress() or compressAsync().
-// Auto-detects gzip wrapper (magic bytes 1f 8b) and falls back to raw PAD4 format.
+// Auto-detects gzip (1f 8b) and the brotli marker; falls back to raw PAD3/PAD4/PAD5.
 export const decompress = (input: Uint8Array): Uint8Array => {
-  const pade = (input[0] === 0x1f && input[1] === 0x8b) ? gunzipSync(input) : input
+  let pade: Uint8Array
+  if (input[0] === 0x1f && input[1] === 0x8b) pade = gunzipSync(input)
+  else if (input[0] === BROTLI_MARKER)        pade = brotliDecompressSync(input.subarray(1))
+  else                                        pade = input
   return decode(deserialize(pade))
 }
 
@@ -34,7 +58,7 @@ export const compressAsync = async (
   workers?: number,
   onProgress?: ProgressCallback
 ): Promise<Uint8Array> =>
-  smallerOfGzip(serialize(await encodeAsync(input, workers, onProgress)))
+  wrapSmallest(serialize(await encodeAsync(input, workers, onProgress)))
 
 export { encode, encodeAsync, decode, serialize, deserialize }
 export { streamDeserialize, readChunkAt } from "./codec/format"

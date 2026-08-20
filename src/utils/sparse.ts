@@ -1,5 +1,6 @@
-// Compact residual serialization: empty / sparse (position-value pairs) / dense.
-// Sparse wins when fewer than ~33% of bytes are non-zero (break-even at k*3 = N).
+// Compact residual serialization: empty / sparse (position-value pairs) / dense
+// / split streams. Sparse wins when fewer than ~33% of bytes are non-zero
+// (break-even at k*3 = N).
 //
 // kind=0: empty  (all zeros)
 // kind=1: dense  [4] byteCount, [N] bytes
@@ -7,10 +8,22 @@
 // kind=3: sparse [4] pairCount, [k×5] uint32-pos + uint8-val  (large residuals)
 // kind=4: VarInt [2] pairCount, [k×(1|2)+1] VarInt-delta-pos + uint8-val
 //         VarInt: gap < 128 → 1 byte; gap 128–16383 → 2 bytes ([gap&0x7F|0x80, gap>>7])
+// kind=5: split  [2] pairCount, [2] posStreamLen, [posStreamLen] VarInt-delta
+//         positions, [pairCount] values — positions and values in separate
+//         contiguous streams instead of interleaved pairs. Same VarInt delta
+//         coding as kind=4 for positions; values are one byte each, un-interleaved
+//         so the two streams' independent statistics aren't diluted by each other
+//         (matters most once the caller's outer deflate/brotli pass runs over
+//         the whole packed blob — each homogeneous region compresses better alone).
+// kind=6: Rice   [2] pairCount, [1] k, [4] posBitLen, [ceil(posBitLen/8)] Rice(k)
+//         -coded delta positions (bit-packed, not byte-aligned per gap),
+//         [pairCount] values. Rice/Golomb coding beats VarInt's fixed 1-or-2-byte
+//         granularity when the gap distribution is roughly geometric (the common
+//         case for uniformly-scattered sparse errors) — see bestRiceK below.
 
 import { isAllZero } from "./buffer"
 
-export type ResidualKind = 0 | 1 | 2 | 3 | 4
+export type ResidualKind = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
 // Compute the VarInt-encoded byte count for a gap value.
 // Gaps < 128 fit in 1 byte; gaps 128–16383 fit in 2 bytes.
@@ -23,6 +36,169 @@ const writeVarint = (buf: Uint8Array, off: number, gap: number): number => {
   buf[off]     = (gap & 0x7F) | 0x80
   buf[off + 1] = gap >> 7
   return 2
+}
+
+// Total VarInt bytes for delta-encoded positions (no interleaved value byte —
+// shared by kind=4's per-pair sizing and kind=5's position-stream-only sizing).
+const varintPositionBytes = (pairs: readonly [number, number][]): number => {
+  let total = 0, prev = 0
+  for (const [pos] of pairs) { total += varintByteLen(pos - prev); prev = pos }
+  return total
+}
+
+// kind=5 candidate: split position/value streams. Its raw packed size is always
+// 2 bytes larger than kind=4's identical content (the extra posStreamLen field),
+// so it can never win a same-representation raw-size comparison — its entire
+// value proposition is that separating the two streams' statistics lets a
+// downstream general-purpose compressor (deflate/brotli) do better than it would
+// on the interleaved kind=4 layout. That can only be judged by actually
+// compressing both and comparing, so this is exposed separately for the caller
+// (format.ts's wireResidual) to try alongside packResidual's winner, rather than
+// competing here on raw size where it would always lose.
+// Below this many pairs there isn't enough repeated structure in either stream
+// for a compressor to plausibly recover the 2-byte header tax — skip the second
+// compression pass entirely rather than pay for a comparison that can't win.
+const MIN_PAIRS_FOR_SPLIT = 8
+
+export const packSplitResidual = (residual: Uint8Array): Uint8Array | null => {
+  const pairs: [number, number][] = []
+  residual.forEach((v, i) => { if (v !== 0) pairs.push([i, v]) })
+  if (pairs.length < MIN_PAIRS_FOR_SPLIT || pairs.length > 65535) return null
+  if (pairs[pairs.length - 1]![0] > 65535) return null
+
+  const posBytes = varintPositionBytes(pairs)
+  const size = 1 + 2 + 2 + posBytes + pairs.length
+  const buf  = new Uint8Array(size)
+  const view = new DataView(buf.buffer)
+  buf[0] = 5
+  view.setUint16(1, pairs.length)
+  view.setUint16(3, posBytes)
+  let wOff = 5
+  let prev = 0
+  for (const [pos] of pairs) { wOff += writeVarint(buf, wOff, pos - prev); prev = pos }
+  for (const [, val] of pairs) buf[wOff++] = val
+  return buf
+}
+
+// ── Rice/Golomb coding for sparse residual positions (kind=6) ────────────────
+
+// Generous upper bound on the search range for k — gap magnitudes in this
+// codec are bounded by chunk size (well under 2^20), so k never needs to exceed
+// this in practice; it just bounds the search loop.
+const RICE_MAX_K = 20
+
+class BitWriter {
+  private bytes: number[] = []
+  private cur = 0
+  private nBits = 0
+
+  writeBits(value: number, count: number): void {
+    for (let i = count - 1; i >= 0; i--) {
+      this.cur = (this.cur << 1) | ((value >>> i) & 1)
+      this.nBits++
+      if (this.nBits === 8) { this.bytes.push(this.cur); this.cur = 0; this.nBits = 0 }
+    }
+  }
+
+  writeUnary(q: number): void {
+    for (let i = 0; i < q; i++) this.writeBits(1, 1)
+    this.writeBits(0, 1)
+  }
+
+  get bitLength(): number { return this.bytes.length * 8 + this.nBits }
+
+  finish(): Uint8Array {
+    const out = this.bytes.slice()
+    if (this.nBits > 0) out.push(this.cur << (8 - this.nBits))
+    return Uint8Array.from(out)
+  }
+}
+
+class BitReader {
+  private bitPos = 0
+  constructor(private buf: Uint8Array, private startByte: number) {}
+
+  private readBit(): number {
+    const bitIdx  = this.bitPos++
+    const byteIdx = this.startByte + (bitIdx >> 3)
+    const shift   = 7 - (bitIdx & 7)
+    return (this.buf[byteIdx]! >> shift) & 1
+  }
+
+  readBits(count: number): number {
+    let v = 0
+    for (let i = 0; i < count; i++) v = (v << 1) | this.readBit()
+    return v >>> 0
+  }
+
+  // maxQ bounds the unary run so a corrupt/malformed stream (all-ones) can't
+  // scan unbounded memory — it throws instead of looping past what any valid
+  // gap for this residual's length could ever produce.
+  readUnary(maxQ: number): number {
+    let q = 0
+    while (this.readBit() === 1) {
+      q++
+      if (q > maxQ) throw new Error("Rice-coded unary run exceeds bound — corrupt data")
+    }
+    return q
+  }
+}
+
+// Exact total bit cost of Rice-coding `gaps` with parameter k — no allocation,
+// used to search for the best k before committing to a bit-writer pass.
+const riceBitCost = (gaps: readonly number[], k: number): number => {
+  let bits = gaps.length * (1 + k)  // 1 terminator bit + k remainder bits, per gap
+  for (const g of gaps) bits += g >>> k
+  return bits
+}
+
+// Search k in [0, RICE_MAX_K] for the smallest total encoded size. Cost is
+// convex in k around the optimum (too-small k → long unary runs; too-large k →
+// wasted remainder bits), so bail out once it's clearly climbing again.
+const bestRiceK = (gaps: readonly number[]): number => {
+  let bestK = 0, bestBits = Infinity
+  for (let k = 0; k <= RICE_MAX_K; k++) {
+    const bits = riceBitCost(gaps, k)
+    if (bits < bestBits) { bestBits = bits; bestK = k }
+    else if (bits > bestBits * 1.5) break
+  }
+  return bestK
+}
+
+// Same pair-count floor as packSplitResidual — below this there isn't enough
+// data for Rice's bit-packing to plausibly beat VarInt's byte granularity.
+const MIN_PAIRS_FOR_RICE = 8
+
+export const packRiceResidual = (residual: Uint8Array): Uint8Array | null => {
+  const pairs: [number, number][] = []
+  residual.forEach((v, i) => { if (v !== 0) pairs.push([i, v]) })
+  if (pairs.length < MIN_PAIRS_FOR_RICE || pairs.length > 65535) return null
+
+  const gaps: number[] = []
+  let prev = 0
+  for (const [pos] of pairs) { gaps.push(pos - prev); prev = pos }
+
+  const k = bestRiceK(gaps)
+  const writer = new BitWriter()
+  const mask = (1 << k) - 1
+  for (const g of gaps) {
+    writer.writeUnary(g >>> k)
+    if (k > 0) writer.writeBits(g & mask, k)
+  }
+  const posBits  = writer.bitLength
+  const posBytes = writer.finish()
+
+  const size = 1 + 2 + 1 + 4 + posBytes.length + pairs.length
+  const buf  = new Uint8Array(size)
+  const view = new DataView(buf.buffer)
+  buf[0] = 6
+  view.setUint16(1, pairs.length)
+  buf[3] = k
+  view.setUint32(4, posBits)
+  buf.set(posBytes, 8)
+  let wOff = 8 + posBytes.length
+  for (const [, val] of pairs) buf[wOff++] = val
+  return buf
 }
 
 export const packResidual = (residual: Uint8Array): Uint8Array => {
@@ -40,33 +216,29 @@ export const packResidual = (residual: Uint8Array): Uint8Array => {
   // kind=4: VarInt delta positions — only viable when positions fit in uint16 range
   let kind4Size = Infinity
   if (!needsLarge && pairs.length <= 65535) {
-    const varintData = pairs.reduce((acc, [pos], i) => {
-      const delta = pos - (i > 0 ? pairs[i - 1]![0] : 0)
-      return acc + varintByteLen(delta) + 1  // VarInt pos + uint8 val
-    }, 0)
-    kind4Size = 1 + 2 + varintData  // kind byte + uint16 pairCount + data
+    kind4Size = 1 + 2 + varintPositionBytes(pairs) + pairs.length  // kind byte + uint16 pairCount + (pos+val) interleaved
   }
 
-  const bestSparse = Math.min(sparseSize, kind4Size)
+  const bestSize = Math.min(sparseSize, kind4Size, denseSize)
 
-  if (bestSparse < denseSize) {
-    if (!needsLarge && kind4Size < sparseSize) {
-      // Emit kind=4: VarInt delta positions
-      const buf  = new Uint8Array(kind4Size)
-      const view = new DataView(buf.buffer)
-      buf[0] = 4
-      view.setUint16(1, pairs.length)
-      let wOff = 3
-      let prev4 = 0
-      for (const [pos, val] of pairs) {
-        const delta = pos - prev4
-        wOff += writeVarint(buf, wOff, delta)
-        buf[wOff++] = val
-        prev4 = pos
-      }
-      return buf
+  if (bestSize === kind4Size && kind4Size < denseSize) {
+    // Emit kind=4: VarInt delta positions
+    const buf  = new Uint8Array(kind4Size)
+    const view = new DataView(buf.buffer)
+    buf[0] = 4
+    view.setUint16(1, pairs.length)
+    let wOff = 3
+    let prev4 = 0
+    for (const [pos, val] of pairs) {
+      const delta = pos - prev4
+      wOff += writeVarint(buf, wOff, delta)
+      buf[wOff++] = val
+      prev4 = pos
     }
+    return buf
+  }
 
+  if (bestSize === sparseSize && sparseSize < denseSize) {
     const buf  = new Uint8Array(sparseSize)
     const view = new DataView(buf.buffer)
     if (needsLarge) {
@@ -169,6 +341,55 @@ export const unpackResidual = (
       pos4 += delta
       residual[pos4] = buf[rOff++]!
     }
+    return [residual, rOff - off]
+  }
+
+  if (kind === 5) {
+    // Split streams: VarInt delta positions, then one value byte per position.
+    const pairCount   = view.getUint16(off + 1)
+    const posStreamLen = view.getUint16(off + 3)
+    const residual    = new Uint8Array(lfsrRegionLen)
+    const positions   = new Array<number>(pairCount)
+    let rOff = off + 5
+    const posStreamEnd = rOff + posStreamLen
+    let pos5 = 0
+    for (let i = 0; i < pairCount; i++) {
+      let delta = 0
+      const b0 = buf[rOff++]!
+      if (b0 & 0x80) {
+        const b1 = buf[rOff++]!
+        delta = (b0 & 0x7F) | (b1 << 7)
+      } else {
+        delta = b0
+      }
+      pos5 += delta
+      positions[i] = pos5
+    }
+    rOff = posStreamEnd
+    for (let i = 0; i < pairCount; i++) residual[positions[i]!] = buf[rOff++]!
+    return [residual, rOff - off]
+  }
+
+  if (kind === 6) {
+    const pairCount = view.getUint16(off + 1)
+    const k         = buf[off + 3]!
+    const posBits   = view.getUint32(off + 4)
+    const posByteLen = Math.ceil(posBits / 8)
+    const residual  = new Uint8Array(lfsrRegionLen)
+    const positions = new Array<number>(pairCount)
+    const reader    = new BitReader(buf, off + 8)
+    // A valid gap can span at most the residual's own length, so this bounds the
+    // largest legitimate unary run — anything beyond it means corrupt input.
+    const maxQ = Math.max(1, (lfsrRegionLen >>> k) + 2)
+    let pos = 0
+    for (let i = 0; i < pairCount; i++) {
+      const q = reader.readUnary(maxQ)
+      const r = k > 0 ? reader.readBits(k) : 0
+      pos += q * (1 << k) + r
+      positions[i] = pos
+    }
+    let rOff = off + 8 + posByteLen
+    for (let i = 0; i < pairCount; i++) residual[positions[i]!] = buf[rOff++]!
     return [residual, rOff - off]
   }
 

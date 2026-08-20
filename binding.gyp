@@ -12,13 +12,16 @@
     ],
     "include_dirs": ["c"],
     "cflags": ["-O2", "-Wall"],
-    "libraries": ["-lm"],
     "conditions": [
       ["OS=='mac'", {
+        "libraries": ["-lm"],
         "xcode_settings": {
           "OTHER_CFLAGS": ["-O2", "-Wall"],
           "OTHER_LDFLAGS": ["-undefined dynamic_lookup"]
         }
+      }],
+      ["OS=='linux'", {
+        "libraries": ["-lm"]
       }]
     ]
   }]

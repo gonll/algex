@@ -6,8 +6,7 @@
 //   tsx src/cli.ts analyze   <input>               (algebraic structure report)
 
 import { readFileSync, writeFileSync } from "fs"
-import { gzipSync } from "zlib"
-import { encode, serialize, decompress } from "./index"
+import { encode, serialize, wrapSmallest, decompress } from "./index"
 import { shannonEntropy } from "./core/entropy"
 import { analyzeBuffer, formatAnalysis, toJSON } from "./core/analysis"
 
@@ -34,8 +33,7 @@ if (cmd === "decompress") {
   const t0   = performance.now()
   const file = encode(bytes)
   const pade = serialize(file)
-  const gz   = gzipSync(pade, { level: 9 })
-  const out  = gz.length < pade.length ? gz : pade
+  const out  = wrapSmallest(pade)
   const ms   = (performance.now() - t0).toFixed(1)
   writeFileSync(dst, out)
 
@@ -46,8 +44,7 @@ if (cmd === "decompress") {
   const t0   = performance.now()
   const file = encode(bytes)
   const pade = serialize(file)
-  const gz   = gzipSync(pade, { level: 9 })
-  const compressed = gz.length < pade.length ? gz : pade
+  const compressed = wrapSmallest(pade)
   const t1   = performance.now()
   const restored   = decompress(compressed)
   const t2   = performance.now()
