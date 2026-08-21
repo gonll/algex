@@ -8,6 +8,10 @@ build/
 # Patent documents (kept private, not part of the public repo)
 patent/
 
+# Generated locally from real system binaries (kernel32.dll, notepad.exe) for
+# real-world validation — not redistributed, regenerate with gen-real-world-file.ts
+test/real-world.bin
+
 # Misc
 *.DS_Store
 
