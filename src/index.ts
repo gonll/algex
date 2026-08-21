@@ -15,7 +15,10 @@ const BROTLI_MARKER = 0xb2
 
 // Full-file brotli only runs once per compress() call (unlike the per-residual
 // pass in format.ts, which runs per chunk) — affording a higher quality setting.
-const BROTLI_FILE_QUALITY = 9
+// Max quality (11): on real-world non-algebraic content (compiled binaries),
+// quality 9 left the codec measurably behind plain brotli-11 alone, which
+// defeats the point of this fallback existing — see scripts/bench-real-world.ts.
+const BROTLI_FILE_QUALITY = 11
 
 // Tries gzip and brotli on the structural pade output; returns whichever is
 // smallest, including the uncompressed pade itself (incompressible raw chunks
