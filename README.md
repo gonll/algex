@@ -24,6 +24,8 @@ A GF(2⁸) m-sequence has ~8 bits/byte Shannon entropy — indistinguishable fro
 
 The win zone is data with **GF(2⁸) linear recurrence structure**. Outside that zone it detects the mismatch quickly and falls through to a raw passthrough with negligible overhead.
 
+**Validated against real telecom test patterns, not just synthetic fixtures.** Generated the actual ITU-T O.150 PRBS7/15/23/31 bit-serial sequences used by real SONET/SDH/USB/PCIe conformance test equipment (byte-packed, the way BERT hardware would store them) and mixed them with slices of real compiled binaries. The codec recovers the *exact* GF(256) order (7/15/23/31) matching each PRBS's true bit-level LFSR order, and beats brotli-11 outright: **42.6%** vs brotli-11's **62.5%** on the real PRBS alone, **45.7%** vs **52.1%** on the full mixed real-world corpus. See `scripts/gen-real-world-file.ts` / `scripts/bench-real-world.ts`.
+
 ---
 
 ## Analyze first — compress if it fits
@@ -54,7 +56,7 @@ Segments (11):
   +  917504 [ 131,072 B]  PRBS-8 m-sequence (maximal-length, perfect)  noise 0.0%  coeffs [0xe3]
 ```
 
-(The noisy L=3 region above is now split into several sub-chunks by the adaptive chunker rather than staying as one — a side effect of this session's encoder changes affecting where chunk-stability boundaries land. Still 11 top-level segments, still the same coefficients recognized throughout.)
+(This is `npx tsx src/cli.ts analyze` — the TypeScript analyzer, which adaptively re-chunks the noisy L=3 region into several sub-chunks as part of its own model-aware splitting. The separate native `c/gf-analyze` tool, run via `npm run analyze:c` or as part of `npm run test:file`, uses a different fixed-window segmentation and reports the same file as 5 broader segments — both are correct for what each tool measures, they just draw chunk boundaries differently.)
 
 `--analyze` tells you *what algebraic structure is present*, even if you're not planning to compress. The verdict drives the routing decision: structured data → compress here; unstructured data → fall back to zstd/brotli.
 
@@ -79,12 +81,19 @@ for the same bytes while differing 20%+ in final size.
 ```
 Input bytes
   │
-  ├─ Adaptive chunking  (splits at entropy discontinuities; boundaries refined ±4 bytes)
+  ├─ Entropy chunking  (splits at entropy discontinuities; boundaries refined ±4 bytes)
+  │
+  ├─ Model-aware split  (per entropy chunk, 3-stage funnel: cheap model-distance scan
+  │  across the chunk → cheap whole-buffer cost re-rank of the best candidates →
+  │  only the top few pay for actual serialized-size verification. Only commits to a
+  │  split when it's a measured win — replaces blind midpoint bisection.)
   │
   └─ Per chunk — candidates generated, then the smallest actual wire size wins:
        ├─  Padé [k/L] search  (tries offsets 0..32, finds best k + shortest L)
        ├─  Approx L=1..5  (brute-force / voting / sub-sequence BM — covers ~17-28% byte noise)
-       │   (skipped once an exact fit at order ≤5 is already found — it can't be beaten)
+       │   (skipped once an exact fit at order ≤5 is already found — it can't be beaten;
+       │   the ladder itself is also skipped when a cheap multi-window BM probe finds no
+       │   plausible low-order fit anywhere in the chunk, even under noise)
        ├─  GF(2^16) word-level BM  (for 16-bit ADC/DAC/audio samples)
        ├─  Affine L=1  (y[n] = c·y[n-1] ⊕ b via shift normalisation to pure L=1)
        ├─  Cyclic  (exact period detection for lookup tables and repeating patterns)
@@ -97,6 +106,15 @@ Input bytes
        ├─  Bit-plane decomposition  (each of 8 bit planes encoded independently, same delta option)
        │      Gated: BM pre-screen per plane; useful for ADC/DAC samples and firmware images.
        └─  Raw passthrough  (kept as a candidate throughout, wins if nothing else does)
+
+Adjacent LFSR-model-aware-split pieces that share one entropy-chunk origin are also
+tried as a single "switching-LFSR" envelope (one CRC/index entry instead of several),
+kept only when that's actually smaller than encoding them as separate chunks.
+
+A deterministic search-budget cost model (fast / balanced / max) caps how many
+expensive candidates, transform-depth levels, model solves, and boundary checks run
+per chunk — same output bytes regardless of scheduling, threaded through both the
+sync and worker-thread-parallel encode paths.
 ```
 
 Each approximate path applies **seed denoising** after finding the LFSR polynomial: sweeps all 256 candidate values for each seed byte and picks the one that minimises the total residual, removing systematic init-window errors in O(L×256×N).
@@ -146,15 +164,22 @@ LFSRRef (PAD5):  [1] kind=9  [4] origLen  [1] prefixLen  [P] prefix
                  (L looked up from the model table — same layout as an LFSR chunk
                  minus the inline coefficients)
 
+Switching-LFSR:  [1] kind=10  [4] origLen  [2] segmentCount
+                 segmentCount × { [4] segmentLen  [2] lfsrLen L  [L] coefficients
+                 [L] seed bytes  [1] residual flag  [payload] }  [4] CRC32
+                 (bundles several adjacent same-origin LFSR segments — that shared
+                 model-aware-split parent — into one envelope, avoiding repeated
+                 per-chunk framing; only chosen when it's actually smaller)
+
 EOF sentinel: [1] 0xFE
 
 XDNI index:   [4] "XDNI"  [4] chunkCount  [N×8] entries  [4] indexOffset
               Each entry: [4] chunkOffset  [4] origLen
 ```
 
-Residuals are XOR of predicted vs actual bytes. Perfect recurrences produce empty residuals. Noisy residuals compete across five sparse encodings — dense fallback, uint16/uint32 position-value pairs, VarInt-delta pairs, split position/value streams, and Rice/Golomb bit-packed positions — and whichever wins is then optionally deflate/brotli compressed on top, again picking whichever is smallest.
+Residuals are XOR of predicted vs actual bytes. Perfect recurrences produce empty residuals. Noisy residuals compete across seven sparse encodings — dense fallback, uint16/uint32 position-value pairs, VarInt-delta pairs, split position/value streams, Rice/Golomb bit-packed positions, a plain bitmap (one bit per byte + a dense value stream, kind=7), and run-length-coded alternating zero/non-zero runs (kind=8) — and whichever wins is then optionally deflate/brotli compressed on top, again picking whichever is smallest.
 
-The outermost wrapper is also a competition: raw PAD bytes vs gzip vs brotli (marker-byte prefixed, since brotli has no self-describing magic), whichever comes out smallest.
+The outermost wrapper is also a competition: raw PAD bytes vs gzip vs max-quality (11) brotli (marker-byte prefixed, since brotli has no self-describing magic), whichever comes out smallest. This runs once per file (not per chunk), so it can afford the highest brotli quality setting without a multiplicative cost.
 
 ---
 
@@ -230,9 +255,9 @@ npx tsx src/cli.ts decompress <input.pade> <output>
 # Benchmark (compress + verify, no output written)
 npx tsx src/cli.ts bench <input>
 
-# Shortcuts (analyze and bench are hardcoded to the test file — use the above for other files)
-npm run analyze   # runs on ./test/gf-structured.bin
-npm run bench     # runs on ./test/gf-structured.bin
+# Shortcuts — same commands, run via npm scripts (still take an explicit input path)
+npm run analyze ./your-prbs-stream.bin
+npm run bench ./your-prbs-stream.bin
 ```
 
 ### Programmatic API
@@ -263,24 +288,40 @@ readable.pipe(createCompressStream()).pipe(writable)
 
 ## Benchmarks
 
-The rows below marked with a machine are re-measured after this session's
-Priorities 1-8 (actual-size candidate selection, approximate cyclic, split/Rice
-residuals, model dictionary, lane-delta composition, brotli wrapper). The
-`/bin/ls` and dictionary-text rows predate that work and were measured on macOS
-— they aren't reproducible on this Windows dev box, so they're left as the
-last known numbers; expect the text row to improve somewhat now that the
-outer wrapper competes brotli against gzip (Priority 7), which favors text.
+The rows below marked `[Windows]` are re-measured on the current dev box after
+two full rounds of work: actual-size candidate selection, approximate cyclic,
+split/Rice/bitmap/RLE residuals, the LFSR model dictionary, lane-delta
+composition, the full-file wrapper competition, model-aware chunking,
+switching-LFSR bundling, deterministic search budgets, and a cheap pre-gate
+that skips the approximate-LFSR search ladder on chunks with no plausible
+algebraic structure. The `/bin/ls` and dictionary-text rows predate all of
+that and were measured on macOS — not reproducible on this Windows dev box,
+so they're left as the last known numbers.
 
 ```
 GF(2⁸) geometric (L=1, perfect)          4 096 B →      49 B  ( 1.2%)  encode  31ms  decode  2ms   [Windows]
 Noisy GF (L=1, 5% errors)                4 096 B →     428 B  (10.4%)  encode  18ms  decode  1ms   [Windows]
 Padé offset (16-byte noise prefix)       4 096 B →      65 B  ( 1.6%)  encode   4ms  decode <1ms   [Windows]
-Mixed LFSR (L=1/2/3 + 8% noise)      1 048 576 B →  10 212 B  ( 1.0%)  encode ~4.2s  decode  47ms  [Windows]
+Mixed LFSR (L=1/2/3 + 8% noise)      1 048 576 B →  10 197 B  ( 1.0%)  encode ~4.8s  decode  39ms  [Windows]
 Binary executable (/bin/ls)               154 624 B →  29 875 B  (19.3%) encode 136ms  decode  4ms   [macOS, pre-session]
 Natural language text (/usr/share/dict/words) →  ~100.1%           (no LFSR structure found)          [macOS, pre-session]
 ```
 
-Decode is always near-instant — LFSR replay is a tight arithmetic loop with no branching. Encode got meaningfully slower on the 1MB mixed file (was ~310ms) — Priority 1 evaluates multiple representations per chunk and picks the smallest by actual serialized size instead of the first one that beats raw, which is inherently more work; a short-circuit for clean exact fits and memoized residual compression keep it from being worse than that.
+Decode is always near-instant — LFSR replay is a tight arithmetic loop with no branching. Encode time on the 1MB mixed file has grown across sessions as more candidate representations compete per chunk (each evaluated by actual serialized size, not just the first one that beats raw) — offset by short-circuits for clean exact fits, the approx-ladder pre-gate, and memoized residual compression that keep it from growing worse than that.
+
+**Real-world corpus** (real ITU-T PRBS7/15/23/31 + real compiled binaries, `scripts/bench-real-world.ts`):
+
+```
+Real PRBS7/15/23/31 only (256 KB)     →  codec  42.6%   vs  brotli-11  62.5%
+Real compiled binaries only (440 KB)  →  codec  47.5%   vs  brotli-11  46.5%
+Full mixed real-world corpus (696 KB) →  codec  45.7%   vs  brotli-11  52.1%
+```
+
+The outer wrapper competition runs brotli at max quality (11) on the whole
+serialized output as a fallback, so `compress()` is roughly as slow as plain
+brotli-11 on inputs where that fallback ends up winning (non-algebraic
+content) — a deliberate ratio-over-speed tradeoff, since that pass only runs
+once per file rather than per chunk.
 
 ---
 
@@ -306,26 +347,52 @@ src/
     cyclic.ts             Approximate cyclic detection: bounded period search + majority-vote template (+ .test.ts)
     gf-poly.ts            GF polynomial utilities: factorRoots, polyFromRoots (+ .test.ts)
   codec/
-    encoder.ts            Candidate-based encoding pipeline (actual-size selection, not first-match)
+    encoder.ts            Candidate-based encoding pipeline (actual-size selection, not first-match);
+                          budget/depth threading, switching-LFSR grouping, approx-ladder cheap gate
     candidates.ts         EncodeCandidate type + pickBest() — cheap estimate → top-K → real size
-    decoder.ts            LFSR replay + residual XOR; cyclic/approx-cyclic/interleave/bitplane decode
-    format.ts             Binary serialization (PAD4/PAD5, CRC32, XDNI index, LFSR model dictionary)
-    chunker.ts            Entropy-adaptive chunking with ±4 boundary refinement (+ .test.ts)
+    decoder.ts            LFSR replay + residual XOR; cyclic/approx-cyclic/interleave/bitplane/
+                          switching-LFSR decode
+    format.ts             Binary serialization (PAD4/PAD5, CRC32, XDNI index, LFSR model dictionary,
+                          switching-LFSR envelope)
+    chunker.ts            Entropy chunking (±4 boundary refinement) + model-aware split (3-stage
+                          cheap-gate → cheap-estimate → real-cost-verify funnel) (+ .test.ts)
+    search-budget.ts      SearchBudget type + fast/balanced/max presets (+ .test.ts)
+    candidate-trace.ts    Opt-in, disabled-by-default candidate tracing for debugging (+ .test.ts)
     stream.ts             Node.js streaming interface
     worker-pool.ts        Worker thread pool for parallel chunk encoding
     worker-entry.ts       Worker thread entry point
   utils/
-    sparse.ts             Sparse residual encoding: dense / pairs / VarInt / split streams / Rice-coded (+ .test.ts)
+    sparse.ts             Sparse residual encoding: dense / pairs / VarInt / split streams /
+                          Rice-coded / bitmap / RLE (+ .test.ts)
     buffer.ts             Byte utilities
+    interleave.ts         splitInterleave / mergeInterleave (m-lane decomposition)
     math.ts               Misc math helpers
   experimental/
-    syndrome-residual.ts  Reed-Solomon-style syndrome residual prototype — NOT wired into production (+ .test.ts)
+    syndrome-residual.ts     Reed-Solomon-style syndrome residual prototype — NOT wired in (+ .test.ts)
+    nonlinear-recurrence.ts  GF(256) quadratic-feature recurrence prototype — NOT wired in;
+                             no real-world hits found in this project's target domain (+ .test.ts)
+  wasm/
+    analyzer.ts           WASM wrapper for the C analyzer (Emscripten build, optional)
 scripts/
-  gen-gf-file.ts          Generates a synthetic GF-structured test binary
-  bench-priority1.ts      Deterministic benchmark corpus for actual-size candidate selection
-  bench-syndrome.ts       Benchmarks the syndrome-residual prototype against the production sparse formats
+  gen-gf-file.ts               Generates the synthetic GF-structured test binary
+  gen-real-world-file.ts       Generates a real-world corpus: real ITU-T PRBS7/15/23/31 +
+                                slices of real compiled binaries already on the machine
+  bench-priority1.ts           Deterministic benchmark corpus for actual-size candidate selection
+  bench-syndrome.ts            Syndrome-residual prototype vs production sparse formats
+  bench-nonlinear-feasibility.ts  Nonlinear-recurrence prototype vs the real fixture
+  bench-rans-feasibility.ts    rANS entropy coding — Shannon-bound analysis (rejected, documented)
+  bench-residual-context.ts   Residual context/delta modeling — rejected, documented
+  bench-model-aware-chunking.ts  Model-aware chunking stress case (mixed-model boundary)
+  bench-plain-vs-codec.ts      Codec vs plain gzip/brotli on synthetic mixed content
+  bench-real-world.ts          Codec vs plain gzip/brotli/brotli-11 on the real-world corpus
+  bench-algebraicity-gate.ts   Calibrates the approx-ladder cheap gate against real noisy data
+  bench-transform-gate.ts      Diagnoses the delta/interleave transform gate's precision limits
+  bench-lane-gate.ts           Calibrates lane-structure gates against real data (see below)
+  run-gf-analyze.cjs           Cross-platform wrapper for the native c/gf-analyze CLI tool
 test/
   gf-structured.bin       1MB synthetic GF file (L=1/2/3 segments + noise)
+  real-world.bin          Real-world corpus (gitignored — embeds real system-binary slices;
+                          regenerate locally with scripts/gen-real-world-file.ts)
 examples/
   demo.ts                 Synthetic roundtrip demo
 ```
@@ -376,7 +443,24 @@ examples/
 
 **Split and Rice-coded sparse residuals** — Beyond interleaved position-value pairs, residuals can also be stored as two separate streams (positions, then values — better locality for the outer deflate/brotli pass) or with positions Rice/Golomb bit-packed (beats VarInt's 1-2 byte granularity on typical gap distributions). Both are always more expensive in raw bytes than the interleaved format, so they're only worth trying — and only actually compress smaller — past a minimum pair-count floor; below that, the encoder doesn't bother.
 
-**Full-file wrapper competition** — The final output is whichever of {raw PAD bytes, gzip, brotli} is smallest. Brotli has no simple universal magic like gzip's `1f 8b`, so a brotli-wrapped file gets a 1-byte marker chosen to collide with neither gzip's nor PAD's leading byte.
+**Full-file wrapper competition** — The final output is whichever of {raw PAD bytes, gzip, brotli} is smallest. Brotli has no simple universal magic like gzip's `1f 8b`, so a brotli-wrapped file gets a 1-byte marker chosen to collide with neither gzip's nor PAD's leading byte. Brotli runs at max quality (11): this pass runs once per file (not per chunk), so it can afford it — and real-world testing on non-algebraic content (compiled binaries) showed quality 9 left the codec measurably behind plain brotli-11 alone, which defeated the point of the fallback existing.
+
+**Deterministic search budgets** — `search-budget.ts` defines `fast` / `balanced` (default) / `max` presets that cap how many expensive candidates, transform-depth levels, model solves, and chunk-boundary checks run per chunk. Threaded through both the synchronous and worker-thread-parallel encode paths so output is byte-identical regardless of scheduling — a budget trades search breadth for speed, never correctness.
+
+**Candidate tracing** — `candidate-trace.ts` provides opt-in (disabled by default, near-zero overhead when off), per-chunk logging of every candidate considered and why it won or lost — for debugging encoder decisions without needing to re-derive them by hand.
+
+**Model-aware chunking** — Blind midpoint bisection missed the case where two adjacent LFSRs share similar entropy but use completely different generators. Replaced with a three-stage funnel: a bounded scan for points where the *local* model changes (cheap short BM fits either side of a candidate boundary), a cheap whole-buffer cost re-rank of the best candidates, and only the top few finalists pay for real serialized-size verification. Only commits to a split when it's a measured win — random data reliably fails the final real-cost check even when it looked "different enough" in the cheap stages.
+
+**Switching-LFSR bundling** — Adjacent model-aware-split pieces that came from the same entropy-chunk parent are also tried as a single envelope (one CRC32/XDNI-index entry covering several LFSR segments instead of one per segment), avoiding repeated per-chunk framing for long runs of short same-origin segments. Only chosen when actually smaller than encoding the pieces separately.
+
+**Approx-ladder cheap gate** — The approximate LFSR search (L=1..5, each trying up to 8 offsets — brute-force/voting work that dominates encode time on non-algebraic chunks) is skipped when a handful of short (20-byte) exact-BM samples across the chunk find no order-≤5 fit anywhere. One clean sample is enough even under noise, since a short window has decent odds of landing in a noise-free stretch; true random or real text essentially never produces a low-order fit anywhere by chance. Calibrated against the fixture's own noisy L=3 segment (100% hit rate — zero false-negative risk on the codec's actual target domain) before shipping; cuts encode time ~26% on realistic mixed content with byte-identical output. See `scripts/bench-algebraicity-gate.ts`.
+
+**Ideas evaluated and rejected (documented, not silently dropped):**
+- **rANS entropy coding** for residual streams — Shannon-entropy-bound analysis (`scripts/bench-rans-feasibility.ts`) showed no realistic win over the existing sparse formats once framing overhead is accounted for.
+- **Residual context/delta modeling** — lost in 4 of 5 tested scenarios against the existing sparse formats (`scripts/bench-residual-context.ts`).
+- **Cross-chunk continuation** beyond what `mergeCompatibleChunks` already does — found architecturally redundant on direct code review; the existing LFSR-run continuity check already covers the case.
+- **Nonlinear (quadratic-feature) recurrence models** — `src/experimental/nonlinear-recurrence.ts` is a correctness-verified GF(256) prototype, kept unwired: this project's target domain (hardware LFSRs) is dominated by *linear* generators by construction, and a feasibility run against the real fixture found zero hits (`scripts/bench-nonlinear-feasibility.ts`) — an explicitly valid, not-yet-useful outcome.
+- **Tightening `laneIsStructured` / `algebraicityScore`** to reject more non-algebraic real content before the transform search runs — `scripts/bench-lane-gate.ts` found both gates already reject 91-99% of real (non-synthetic) non-algebraic content; a candidate 2-window generalization fix saved nothing measurable while costing real coverage (73%→49% acceptance) on the fixture's noisy target-domain data. Rejected.
 
 **Syndrome-based residual encoding (prototyped, not enabled)** — `src/experimental/syndrome-residual.ts` implements Reed-Solomon-style syndrome decoding (Berlekamp-Massey + Chien search + Forney's algorithm) as an alternative sparse-residual format: store 2t syndromes instead of (position, value) pairs. Correctness-verified, but benchmarked as a net loss once realistic residual sizes and error distributions are accounted for — see the comment at the top of that file and `scripts/bench-syndrome.ts`.
 
@@ -404,10 +488,13 @@ examples/
 
 ```bash
 npm run build                          # TypeScript compile + native addon
-npm test                               # 184 unit tests across 15 test files
-npm run demo                           # Synthetic roundtrip demo
+npm test                               # 236 unit tests across 21 test files
+npx tsx examples/demo.ts               # Synthetic roundtrip demo
+npm run test:file                      # compress -> decompress -> native analyze on the fixture
 npx tsx src/cli.ts bench <file>        # Benchmark any file
 npx tsx src/cli.ts analyze <file>      # Algebraic structure report
+npx tsx scripts/gen-real-world-file.ts # Regenerate the real-world validation corpus (local, gitignored)
+npx tsx scripts/bench-real-world.ts    # Codec vs plain gzip/brotli on the real-world corpus
 npx tsx scripts/bench-priority1.ts     # Actual-size candidate selection benchmark corpus
 npx tsx scripts/bench-syndrome.ts      # Syndrome-residual prototype vs production sparse formats
 npm run build:exe                      # Build a self-contained executable for the current platform
@@ -425,4 +512,4 @@ git tag v0.1.2 && git push origin v0.1.2
 
 This triggers `.github/workflows/release.yml`, which builds on `windows-latest`, `ubuntu-latest`, and `macos-latest` and publishes all three archives to the GitHub release automatically.
 
-184 tests across 15 test files covering sparse encoding (dense/pairs/VarInt/split/Rice), Padé search (via C addon), GF polynomial round-trips, approximate LFSR detection (L=1..5), approximate cyclic detection, chunking with boundary refinement, dual pre-gate (entropy + algebraicity), actual-size candidate selection, the LFSR model dictionary, lane-delta composition, the full-file wrapper competition, the syndrome-residual prototype, and end-to-end roundtrips.
+236 tests across 21 test files covering sparse encoding (dense/pairs/VarInt/split/Rice/bitmap/RLE), Padé search (via C addon), GF polynomial round-trips, approximate LFSR detection (L=1..5), approximate cyclic detection, chunking with boundary refinement and model-aware splitting, dual pre-gate (entropy + algebraicity), actual-size candidate selection, the LFSR model dictionary, lane-delta composition, switching-LFSR bundling, search budgets, candidate tracing, the full-file wrapper competition, the syndrome-residual and nonlinear-recurrence prototypes, and end-to-end roundtrips (including sync/worker-parallel parity).
