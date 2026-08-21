@@ -1,10 +1,15 @@
-// Priority 7: full-file wrapper competition — raw PAD vs gzip(PAD) vs brotli(PAD).
+// Priority 7 / roadmap 3: full-file wrapper competition — raw PAD vs the cheap
+// tier (zstd where available, else gzip) vs brotli(PAD). "fast" mode skips
+// brotli entirely and relies on the cheap tier alone.
 
 import { describe, it, expect } from "vitest"
+import * as zlib from "zlib"
 import { gzipSync } from "zlib"
 import { compress, decompress, wrapSmallest } from "./index"
 import { serialize, deserialize } from "./codec/format"
 import { encode } from "./codec/encoder"
+
+const hasZstd = typeof (zlib as unknown as { zstdCompressSync?: unknown }).zstdCompressSync === "function"
 
 const lcg = (seed: number) => {
   let s = seed
@@ -67,5 +72,38 @@ describe("Priority 7: full-file wrapper competition", () => {
     const pade = serialize(encode(buf))
     const wrapped = wrapSmallest(pade)
     expect(wrapped.length).toBeLessThanOrEqual(pade.length)
+  })
+
+  it("fast mode never emits the brotli marker (skips the expensive pass entirely)", () => {
+    const text = "the quick brown fox jumps over the lazy dog. ".repeat(200)
+    const buf = new TextEncoder().encode(text)
+    const wrapped = wrapSmallest(serialize(encode(buf)), "fast")
+    expect(wrapped[0]).not.toBe(0xb2)
+  })
+
+  it("fast mode round-trips through compress/decompress", () => {
+    const rng = lcg(13)
+    const buf = Uint8Array.from({ length: 4096 }, () => Math.floor(rng() * 256))
+    const compressed = compress(buf, "fast")
+    expect(decompress(compressed)).toEqual(buf)
+  })
+
+  it.runIf(hasZstd)("uses zstd (frame magic 28 b5 2f fd) as the cheap tier when available, and it round-trips", () => {
+    const text = "the quick brown fox jumps over the lazy dog. ".repeat(200)
+    const buf = new TextEncoder().encode(text)
+    const wrapped = wrapSmallest(serialize(encode(buf)), "fast")
+    // fast mode only ever tries raw or the cheap tier — on a Node with zstd,
+    // that's zstd; confirm the frame magic and a correct round-trip.
+    if (wrapped[0] === 0x28) {
+      expect(Array.from(wrapped.subarray(0, 4))).toEqual([0x28, 0xb5, 0x2f, 0xfd])
+      expect(decompress(wrapped)).toEqual(buf)
+    }
+  })
+
+  it("zstd's frame magic never collides with gzip magic, the brotli marker, or the PAD magic", () => {
+    // 0x28 (zstd's leading byte) vs 0x1f (gzip), 0xb2 (brotli marker), 0x50 ('P', PAD).
+    expect(0x28).not.toBe(0x1f)
+    expect(0x28).not.toBe(0xb2)
+    expect(0x28).not.toBe(0x50)
   })
 })

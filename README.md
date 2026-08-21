@@ -179,7 +179,7 @@ XDNI index:   [4] "XDNI"  [4] chunkCount  [N×8] entries  [4] indexOffset
 
 Residuals are XOR of predicted vs actual bytes. Perfect recurrences produce empty residuals. Noisy residuals compete across seven sparse encodings — dense fallback, uint16/uint32 position-value pairs, VarInt-delta pairs, split position/value streams, Rice/Golomb bit-packed positions, a plain bitmap (one bit per byte + a dense value stream, kind=7), and run-length-coded alternating zero/non-zero runs (kind=8) — and whichever wins is then optionally deflate/brotli compressed on top, again picking whichever is smallest.
 
-The outermost wrapper is also a competition: raw PAD bytes vs gzip vs max-quality (11) brotli (marker-byte prefixed, since brotli has no self-describing magic), whichever comes out smallest. This runs once per file (not per chunk), so it can afford the highest brotli quality setting without a multiplicative cost.
+The outermost wrapper is also a competition: raw PAD bytes vs a cheap tier (zstd where the runtime has it, else gzip — both self-describing) vs max-quality (11) brotli (marker-byte prefixed, since brotli has no self-describing magic), whichever comes out smallest. This runs once per file (not per chunk), so it can afford the highest brotli quality setting without a multiplicative cost — except in `"fast"` mode, which skips brotli entirely and relies on the cheap tier alone (see below).
 
 ---
 
@@ -236,7 +236,7 @@ This package includes a native C addon (the GF(2⁸) arithmetic and Berlekamp-Ma
 - **Linux**: `build-essential` — `sudo apt install build-essential` (Debian/Ubuntu) or equivalent
 - **Windows**: [windows-build-tools](https://github.com/felixrieseberg/windows-build-tools) or Visual Studio with C++ workload
 
-Node.js ≥ 18 required.
+Node.js ≥ 18 required. Node 22.15+ additionally unlocks zstd as the outer wrapper's cheap tier (feature-detected automatically); older Node falls back to gzip there with no other change in behavior.
 
 ---
 
@@ -275,9 +275,18 @@ console.log(formatAnalysis(result))
 const compressed = compress(inputBytes)   // Uint8Array → Uint8Array
 const restored   = decompress(compressed) // Uint8Array → Uint8Array
 
+// mode: "balanced" (default) | "fast" | "max" — controls both the algebraic
+// search budget AND the outer wrap. "fast" skips the expensive brotli-11
+// pass and relies on zstd/gzip alone, so it's genuinely fast end-to-end, not
+// just a smaller search — real-world testing measured ~45% less total time
+// for a modest, deliberate ratio tradeoff. decompress() auto-detects
+// whichever wrapper won, so it never needs to be told the mode.
+const fast = compress(inputBytes, "fast")
+
 // Async (chunks encoded in parallel across worker threads)
 const compressed = await compressAsync(inputBytes)
 const compressed = await compressAsync(inputBytes, 4) // explicit worker count
+const compressedFast = await compressAsync(inputBytes, 4, undefined, "fast")
 
 // Streaming
 import { createCompressStream, createDecompressStream } from "pade-compress"
@@ -388,6 +397,8 @@ scripts/
   bench-algebraicity-gate.ts   Calibrates the approx-ladder cheap gate against real noisy data
   bench-transform-gate.ts      Diagnoses the delta/interleave transform gate's precision limits
   bench-lane-gate.ts           Calibrates lane-structure gates against real data (see below)
+  bench-residual-brotli-quality.ts  Per-residual brotli quality bump — rejected, documented
+  bench-zstd-feasibility.ts    zstd vs gzip/brotli on real-world data; ratio AND decompress speed
   run-gf-analyze.cjs           Cross-platform wrapper for the native c/gf-analyze CLI tool
 test/
   gf-structured.bin       1MB synthetic GF file (L=1/2/3 segments + noise)
@@ -443,7 +454,9 @@ examples/
 
 **Split and Rice-coded sparse residuals** — Beyond interleaved position-value pairs, residuals can also be stored as two separate streams (positions, then values — better locality for the outer deflate/brotli pass) or with positions Rice/Golomb bit-packed (beats VarInt's 1-2 byte granularity on typical gap distributions). Both are always more expensive in raw bytes than the interleaved format, so they're only worth trying — and only actually compress smaller — past a minimum pair-count floor; below that, the encoder doesn't bother.
 
-**Full-file wrapper competition** — The final output is whichever of {raw PAD bytes, gzip, brotli} is smallest. Brotli has no simple universal magic like gzip's `1f 8b`, so a brotli-wrapped file gets a 1-byte marker chosen to collide with neither gzip's nor PAD's leading byte. Brotli runs at max quality (11): this pass runs once per file (not per chunk), so it can afford it — and real-world testing on non-algebraic content (compiled binaries) showed quality 9 left the codec measurably behind plain brotli-11 alone, which defeated the point of the fallback existing.
+**Full-file wrapper competition** — The final output is whichever of {raw PAD bytes, cheap tier, brotli} is smallest. Brotli has no simple universal magic like gzip's `1f 8b`, so a brotli-wrapped file gets a 1-byte marker chosen to collide with neither the cheap tier's nor PAD's leading byte. Brotli runs at max quality (11): this pass runs once per file (not per chunk), so it can afford it — and real-world testing on non-algebraic content (compiled binaries) showed quality 9 left the codec measurably behind plain brotli-11 alone, which defeated the point of the fallback existing.
+
+**zstd as the cheap tier, and a genuinely fast "fast" mode** — Node 22.15+ ships real libzstd bindings directly in the built-in `zlib` module (no external dependency); feature-detected at runtime and used in place of gzip when available, falling back to gzip on older Node (this package's stated floor stays >=18). Measured strictly smaller *and* faster than gzip-9 on every corpus tested, including the codec's own near-incompressible structural output (`scripts/bench-zstd-feasibility.ts`) — but brotli-11 still won outright on ratio in every real-world scenario tested, so zstd doesn't get added *alongside* brotli in the default competition (that would just add cost for a candidate that, per the evidence, never wins). The real find: `"fast"` mode's search budget only ever limited the *algebraic* search — the outer wrap still unconditionally paid brotli-11's cost regardless of mode, which measured out to roughly **half of fast mode's total time** on real-world input. `"fast"` mode now skips brotli entirely and relies on the cheap tier alone, cutting real-world `compress(_, "fast")` time from ~3.0s to ~1.7s for a modest, deliberate ratio tradeoff. `"balanced"`/`"max"` are unaffected — they still try both and keep whichever wins.
 
 **Deterministic search budgets** — `search-budget.ts` defines `fast` / `balanced` (default) / `max` presets that cap how many expensive candidates, transform-depth levels, model solves, and chunk-boundary checks run per chunk. Threaded through both the synchronous and worker-thread-parallel encode paths so output is byte-identical regardless of scheduling — a budget trades search breadth for speed, never correctness.
 
@@ -461,6 +474,8 @@ examples/
 - **Cross-chunk continuation** beyond what `mergeCompatibleChunks` already does — found architecturally redundant on direct code review; the existing LFSR-run continuity check already covers the case.
 - **Nonlinear (quadratic-feature) recurrence models** — `src/experimental/nonlinear-recurrence.ts` is a correctness-verified GF(256) prototype, kept unwired: this project's target domain (hardware LFSRs) is dominated by *linear* generators by construction, and a feasibility run against the real fixture found zero hits (`scripts/bench-nonlinear-feasibility.ts`) — an explicitly valid, not-yet-useful outcome.
 - **Tightening `laneIsStructured` / `algebraicityScore`** to reject more non-algebraic real content before the transform search runs — `scripts/bench-lane-gate.ts` found both gates already reject 91-99% of real (non-synthetic) non-algebraic content; a candidate 2-window generalization fix saved nothing measurable while costing real coverage (73%→49% acceptance) on the fixture's noisy target-domain data. Rejected.
+- **Bumping per-residual brotli quality** (`bestWireFor`, format.ts) the same way the full-file wrapper was bumped to 11 — `scripts/bench-residual-brotli-quality.ts` found this call runs once per residual-packing candidate per chunk (not once per file), so the cost compounds across a file's chunks while residuals are typically already close to incompressible. Quality 9 cost +42% encode time for zero ratio gain on the synthetic fixture; quality 11 cost +138% for zero gain there and only 0.3% on the real-world corpus. Left at quality 6.
+- **Adding zstd *alongside* brotli** in the default (`balanced`/`max`) outer-wrap competition, rather than only as `"fast"` mode's brotli replacement — `scripts/bench-zstd-feasibility.ts` found brotli-11 won on ratio in every real-world scenario tested (real PRBS, real binaries, the full mixed corpus), so trying zstd there too would only add compute for a candidate that never wins. Zstd earns its place specifically in `"fast"` mode instead, where brotli isn't tried at all.
 
 **Syndrome-based residual encoding (prototyped, not enabled)** — `src/experimental/syndrome-residual.ts` implements Reed-Solomon-style syndrome decoding (Berlekamp-Massey + Chien search + Forney's algorithm) as an alternative sparse-residual format: store 2t syndromes instead of (position, value) pairs. Correctness-verified, but benchmarked as a net loss once realistic residual sizes and error distributions are accounted for — see the comment at the top of that file and `scripts/bench-syndrome.ts`.
 
@@ -488,7 +503,7 @@ examples/
 
 ```bash
 npm run build                          # TypeScript compile + native addon
-npm test                               # 236 unit tests across 21 test files
+npm test                               # 240 unit tests across 21 test files
 npx tsx examples/demo.ts               # Synthetic roundtrip demo
 npm run test:file                      # compress -> decompress -> native analyze on the fixture
 npx tsx src/cli.ts bench <file>        # Benchmark any file
@@ -512,4 +527,4 @@ git tag v0.1.2 && git push origin v0.1.2
 
 This triggers `.github/workflows/release.yml`, which builds on `windows-latest`, `ubuntu-latest`, and `macos-latest` and publishes all three archives to the GitHub release automatically.
 
-236 tests across 21 test files covering sparse encoding (dense/pairs/VarInt/split/Rice/bitmap/RLE), Padé search (via C addon), GF polynomial round-trips, approximate LFSR detection (L=1..5), approximate cyclic detection, chunking with boundary refinement and model-aware splitting, dual pre-gate (entropy + algebraicity), actual-size candidate selection, the LFSR model dictionary, lane-delta composition, switching-LFSR bundling, search budgets, candidate tracing, the full-file wrapper competition, the syndrome-residual and nonlinear-recurrence prototypes, and end-to-end roundtrips (including sync/worker-parallel parity).
+240 tests across 21 test files covering sparse encoding (dense/pairs/VarInt/split/Rice/bitmap/RLE), Padé search (via C addon), GF polynomial round-trips, approximate LFSR detection (L=1..5), approximate cyclic detection, chunking with boundary refinement and model-aware splitting, dual pre-gate (entropy + algebraicity), actual-size candidate selection, the LFSR model dictionary, lane-delta composition, switching-LFSR bundling, search budgets, candidate tracing, the full-file wrapper competition (including the zstd cheap tier and fast-mode's brotli skip), the syndrome-residual and nonlinear-recurrence prototypes, and end-to-end roundtrips (including sync/worker-parallel parity).
