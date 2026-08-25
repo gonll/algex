@@ -12,6 +12,12 @@ patent/
 # real-world validation — not redistributed, regenerate with gen-real-world-file.ts
 test/real-world.bin
 
+# Real public-data benchmark corpus — downloaded/generated locally, not
+# redistributed through this repo; regenerate with scripts/fetch-real-data.ts.
+# The manifest (sources + licenses) stays tracked.
+test/real-data/*
+!test/real-data/MANIFEST.md
+
 # Misc
 *.DS_Store
 
