@@ -37,6 +37,22 @@ describe("compress → decompress roundtrip", () => {
   it("size not a multiple of chunk size", () => {
     roundtrip(new Uint8Array(777).fill(1))
   })
+
+  // Regression: found via real-world testing on a real firmware image
+  // (Raspberry Pi's bootcode.bin) with a long near-zero run interrupted by
+  // scattered irregular bytes -- every offset's exact BM order exceeded the
+  // hard limit, but findBestPade's old "nothing found" sentinel was
+  // indistinguishable from a real tiny-order result to isCompressible's
+  // size-ratio check, corrupting the wire format (see core/pade.ts and
+  // pade.test.ts's unit-level regression test for the root cause). This
+  // reproduces the failure shape end-to-end through the full codec.
+  it("long near-zero run with scattered irregular bytes (degenerate BM order)", () => {
+    let s = 777
+    const rng = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff }
+    const buf = new Uint8Array(8192)
+    for (let i = 0; i < 300; i++) buf[Math.floor(rng() * buf.length)] = 1 + Math.floor(rng() * 255)
+    roundtrip(buf)
+  })
 })
 
 describe("compression ratios", () => {

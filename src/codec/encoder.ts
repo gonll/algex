@@ -246,8 +246,9 @@ const anyWindowLooksAlgebraic = (chunk: Uint8Array): boolean => {
 const searchLFSRCandidates = (chunk: Uint8Array, seq: GFElem[], budget: SearchBudget): EncodeCandidate[] => {
   const candidates: EncodeCandidate[] = []
 
-  const { offset, lfsr, init } = findBestPade(seq)
-  if (isCompressible(chunk, lfsr.length)) {
+  const exactPade = findBestPade(seq)
+  if (exactPade && isCompressible(chunk, exactPade.lfsr.length)) {
+    const { offset, lfsr, init } = exactPade
     const candidate = buildLFSRChunk(chunk, seq, offset, lfsr, init)
     const size = refinedSize(offset, lfsr.length, candidate.residual)
     if (size < rawSize(chunk.length)) {

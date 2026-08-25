@@ -11,23 +11,43 @@ const makeGF = (n: number, coeff: number, seed = 1): number[] => {
 
 describe("findBestPade", () => {
   it("finds offset=0, L=1 for pure GF geometric sequence", () => {
-    const { offset, lfsr } = findBestPade(makeGF(256, 3))
-    expect(offset).toBe(0)
-    expect(lfsr.length).toBe(1)
+    const result = findBestPade(makeGF(256, 3))
+    expect(result).not.toBeNull()
+    expect(result!.offset).toBe(0)
+    expect(result!.lfsr.length).toBe(1)
   })
 
   it("finds non-zero offset for data with noise prefix", () => {
     // 12 noise bytes then GF sequence — best Padé skips some of the noise
     const noise = Array.from({ length: 12 }, (_, i) => (i * 37 + 11) & 0xff)
     const gf    = makeGF(500, 5)
-    const { offset } = findBestPade([...noise, ...gf], 12)
-    expect(offset).toBeGreaterThan(0)
+    const result = findBestPade([...noise, ...gf], 12)
+    expect(result).not.toBeNull()
+    expect(result!.offset).toBeGreaterThan(0)
   })
 
   it("never returns offset > maxOffset", () => {
     const seq = Array.from({ length: 200 }, () => Math.floor(Math.random() * 256))
-    const { offset } = findBestPade(seq, 4)
-    expect(offset).toBeLessThanOrEqual(4)
+    const result = findBestPade(seq, 4)
+    if (result) expect(result.offset).toBeLessThanOrEqual(4)
+  })
+
+  // Regression: a real firmware image (Raspberry Pi's bootcode.bin — see
+  // scripts/fetch-real-data.ts) contains a long near-zero run interrupted by
+  // scattered irregular bytes. Every offset's exact BM order exceeded
+  // BM_HARD_LIMIT (64), but the quick prescreen still passed (some short
+  // window inside the zero run looked clean), so the "nothing found" case
+  // used to return a placeholder PadeResult ({ coeffs: [], length: cap+1 })
+  // that looked like a small, real LFSR order to isCompressible's size-ratio
+  // check downstream — corrupting the wire format when built into a chunk
+  // (declared N coefficient/seed bytes that were never actually written).
+  // Must now return null instead of a value indistinguishable from a real fit.
+  it("returns null when every offset's exact order exceeds the hard limit, even if the quick prescreen passes", () => {
+    let s = 12345
+    const rng = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff }
+    const seq = new Array<number>(4096).fill(0)
+    for (let i = 0; i < 150; i++) seq[Math.floor(rng() * seq.length)] = 1 + Math.floor(rng() * 255)
+    expect(findBestPade(seq)).toBeNull()
   })
 })
 

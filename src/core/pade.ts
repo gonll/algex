@@ -27,12 +27,26 @@ const BM_HARD_LIMIT = 64
 const QUICK_CAP     = 8
 const QUICK_WINDOW  = 2 * QUICK_CAP + 4
 
-export const findBestPade = (seq: GFElem[], maxOffset = 32, maxL?: number): PadeResult => {
+// Returns null when no offset within maxOffset finds an order <= cap — this
+// used to be signaled by a placeholder PadeResult ({ coeffs: [], length:
+// cap + 1 }), but that shape is indistinguishable from a real (tiny-order)
+// result to a caller that only checks lfsr.length against the chunk's own
+// size (e.g. isCompressible's length/byteCount ratio) rather than against
+// `cap` itself, which callers don't have access to. For a large enough
+// chunk, cap + 1 can look "highly compressible" by that ratio alone, which
+// let a degenerate { coeffs: [], length: N } chunk through to buildLFSRChunk
+// -- runLFSR then received an init/coeffs array far shorter than the length
+// it claimed, corrupting the wire format (the header declares N coefficient
+// + N seed bytes that were never actually written, misaligning every byte
+// read afterward, including the residual and any following chunk). Found
+// via real-world testing on real firmware images with long-degenerate byte
+// runs — see scripts/bench-real-data.ts and pade.test.ts's regression test.
+export const findBestPade = (seq: GFElem[], maxOffset = 32, maxL?: number): PadeResult | null => {
   const cap    = Math.min(maxL ?? Math.ceil(seq.length * 0.25), BM_HARD_LIMIT)
   const maxOff = Math.min(maxOffset, seq.length - 4)
 
   let bestScore = Infinity
-  let best: PadeResult = { offset: 0, lfsr: { coeffs: [], length: cap + 1 }, init: [] }
+  let best: PadeResult | null = null
 
   // Prescreen with a short window to avoid O(N^2) BM on non-LFSR data.
   let quickPass = false
@@ -40,7 +54,7 @@ export const findBestPade = (seq: GFElem[], maxOffset = 32, maxL?: number): Pade
     const win = seq.slice(k, k + QUICK_WINDOW)
     if (addon.bmSolve(Buffer.from(win)).length <= QUICK_CAP) { quickPass = true; break }
   }
-  if (!quickPass) return best
+  if (!quickPass) return null
 
   for (let k = 0; k <= maxOff; k++) {
     const sub = seq.slice(k)
