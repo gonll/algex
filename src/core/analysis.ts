@@ -194,6 +194,10 @@ const describeTransformChunk = (chunk: TransformChunk): { recognition: string; n
     const orders   = chunk.segments.map(seg => seg.lfsr.length).join(",")
     return { recognition: `switching LFSR [${chunk.segments.length} segments, L=${orders}]`, noisePercent: parseFloat(noise.toFixed(1)) }
   }
+  if (chunk.kind === "bit-lfsr") {
+    const noise = (chunk.errors.length / (chunk.originalLength * 8)) * 100
+    return { recognition: `bit-level LFSR over GF(2) (L=${chunk.L})`, noisePercent: parseFloat(noise.toFixed(2)) }
+  }
   // bitplane
   const kinds = chunk.planes.map(p => p.kind).join(",")
   return { recognition: `bitplane [${kinds}]`, noisePercent: 0 }

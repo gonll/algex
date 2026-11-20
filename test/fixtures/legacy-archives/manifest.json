@@ -1,0 +1,78 @@
+{
+ "rand1.balanced.bin": {
+  "inSha": "beead77994cf573341ec17b58bbf7eb34d2711c993c1d976b128b3188dc1829a",
+  "inLen": 1
+ },
+ "rand7.balanced.bin": {
+  "inSha": "25c7ba8eb49d05c77ba891ae687fe8f577ad9529f1826ec4f67ed0f607b13ccd",
+  "inLen": 7
+ },
+ "rand100.balanced.bin": {
+  "inSha": "2654a70d1c6518dcb34aaa9ee274880fff4caf1eb57d698b42be8b8e9aa62701",
+  "inLen": 100
+ },
+ "rand1000.balanced.bin": {
+  "inSha": "4832af28e053162144fd75424db4c871d1b7255d7f6e1be31a1669d9acd5fed2",
+  "inLen": 1000
+ },
+ "rand4096.balanced.bin": {
+  "inSha": "d6d018c91ed60a1efe9a3f46a6a949e10e8fda48f65ade02ef0ffe4ffc12679b",
+  "inLen": 4096
+ },
+ "rand65536.balanced.bin": {
+  "inSha": "9fcb57418cc8e85b65adbf1c437e5ece07b0c1760eb24722b7dfd1b30c92c8ae",
+  "inLen": 65536
+ },
+ "zeros100k.balanced.bin": {
+  "inSha": "9192c25b734fcbadbe32dadc28089c60db0e39f90cc20ce2e5733f57261acc0c",
+  "inLen": 100000
+ },
+ "counter100k.balanced.bin": {
+  "inSha": "db8f1d69251d95e2c88268d3c540533cc5182e0e33065a6f3f322f606a574489",
+  "inLen": 100000
+ },
+ "saw3.balanced.bin": {
+  "inSha": "4598a08ef1d67531bc91bd19197d28181aecd23e80159c4561b78fff3983ac48",
+  "inLen": 50000
+ },
+ "text.balanced.bin": {
+  "inSha": "552ffd3442405011205af8f02676b237fe3e394d116deb81720590fe076a8b11",
+  "inLen": 135000
+ },
+ "text.max.bin": {
+  "inSha": "552ffd3442405011205af8f02676b237fe3e394d116deb81720590fe076a8b11",
+  "inLen": 135000
+ },
+ "lfsr16a.balanced.bin": {
+  "inSha": "92ff5a52b3cf546eaae2a5222c1b442b6056b593af4bf1974267c2b275abe734",
+  "inLen": 90000
+ },
+ "lfsr16a.max.bin": {
+  "inSha": "92ff5a52b3cf546eaae2a5222c1b442b6056b593af4bf1974267c2b275abe734",
+  "inLen": 90000
+ },
+ "lfsr8.balanced.bin": {
+  "inSha": "bed2713d37057dfa580bd51ca476b1145d2e13586bd5f0c368a2fecb43caf17c",
+  "inLen": 90000
+ },
+ "lfsr8.max.bin": {
+  "inSha": "bed2713d37057dfa580bd51ca476b1145d2e13586bd5f0c368a2fecb43caf17c",
+  "inLen": 90000
+ },
+ "col-sine-w3.balanced.bin": {
+  "inSha": "d96f8def98a04669d76f8572f3ddfb9825311f372be41c8ea9d7a8276703a4c7",
+  "inLen": 120000
+ },
+ "col-sine-w3.max.bin": {
+  "inSha": "d96f8def98a04669d76f8572f3ddfb9825311f372be41c8ea9d7a8276703a4c7",
+  "inLen": 120000
+ },
+ "col-ramp-w2.balanced.bin": {
+  "inSha": "01df79cd7769ed874e500a5773903f57f56323855e25396e2e3f09d8bc93b116",
+  "inLen": 100000
+ },
+ "col-ramp-w2.max.bin": {
+  "inSha": "01df79cd7769ed874e500a5773903f57f56323855e25396e2e3f09d8bc93b116",
+  "inLen": 100000
+ }
+}

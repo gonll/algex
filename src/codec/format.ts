@@ -36,12 +36,13 @@
 // magic is PAD5.
 
 import { deflateRawSync, inflateRawSync, brotliCompressSync, brotliDecompressSync, constants } from "zlib"
-import { CompressedFile, Chunk, CyclicChunk, ApproxCyclicChunk, SimpleChunk, LaneChunk, LFSRChunk, DeltaChunk, AffineChunk, InterleaveChunk, BitplaneChunk, LFSR16Chunk, NonDeltaChunk, SwitchingLFSRChunk } from "../types"
+import { CompressedFile, Chunk, CyclicChunk, ApproxCyclicChunk, SimpleChunk, LaneChunk, LFSRChunk, DeltaChunk, AffineChunk, InterleaveChunk, BitplaneChunk, LFSR16Chunk, NonDeltaChunk, SwitchingLFSRChunk, BitLfsrChunk } from "../types"
 import { packResidual, packSplitResidual, packRiceResidual, packBitmapResidual, packRLEResidual, unpackResidual } from "../utils/sparse"
 
 const MAGIC_V3        = 0x50414445  // "PADE"
 const MAGIC_V4        = 0x50414434  // "PAD4"
 const MAGIC_V5        = 0x50414435  // "PAD5" — PAD4 + a file-level LFSR model dictionary
+const MAGIC_V6        = 0x50414436  // "PAD6" — PAD5 layout (model table always present, maybe empty) + KIND_BIT_LFSR
 const KIND_RAW        = 0
 const KIND_LFSR       = 1
 const KIND_CYCLIC     = 2
@@ -53,6 +54,7 @@ const KIND_LFSR16     = 7
 const KIND_APPROX_CYCLIC = 8
 const KIND_LFSR_REF   = 9   // PAD5 only: same as KIND_LFSR but coeffs come from the model table
 const KIND_SWITCHING_LFSR = 10  // roadmap 2, Priority 4: a run of adjacent LFSR segments sharing one envelope
+const KIND_BIT_LFSR   = 11    // PAD6: LFSR sobre GF(2) a nivel bit (+ residual de posiciones Rice)
 const KIND_EOF        = 0xFE
 const XDNI_MAGIC      = 0x58444E49  // "XDNI"
 const RES_PLAIN       = 0
@@ -212,10 +214,11 @@ type PreparedAffine     = { kind: "affine";     chunk: AffineChunk;     innerBuf
 type PreparedInterleave = { kind: "interleave"; chunk: InterleaveChunk; laneBufs: Uint8Array[] }
 type PreparedBitplane   = { kind: "bitplane";   chunk: BitplaneChunk;   planeBufs: Uint8Array[] }
 type PreparedLFSR16     = { kind: "lfsr16";     chunk: LFSR16Chunk;     rWire: Uint8Array }
+type PreparedBitLfsr    = { kind: "bit-lfsr";   chunk: BitLfsrChunk;    body: Uint8Array }
 type PreparedSwitchingLFSR = { kind: "switching-lfsr"; chunk: SwitchingLFSRChunk; rWires: Uint8Array[] }
 type Prepared = PreparedRaw | PreparedLFSR | PreparedLFSRRef | PreparedCyclic | PreparedApproxCyclic
               | PreparedDelta | PreparedAffine | PreparedInterleave | PreparedBitplane | PreparedLFSR16
-              | PreparedSwitchingLFSR
+              | PreparedSwitchingLFSR | PreparedBitLfsr
 
 // ── Simple chunk serialization (used for lane/plane embedding) ────────────────
 
@@ -279,6 +282,105 @@ const serializeSimpleChunk = (chunk: SimpleChunk): Uint8Array => {
   return buf
 }
 
+
+// ── bit-lfsr (KIND_BIT_LFSR) body: everything after the kind byte, before the CRC ──
+// [4] origLen  [1] flags(bit0 = msbFirst)  [2] L  [ceil(L/8)] c1..cL  [ceil(L/8)] seed
+// varint errCount  varint anchor  (if errCount>0: [1] riceK  varint bitstreamLen  [bitstream])
+const packBits = (bits: ArrayLike<number>, n: number): Uint8Array => {
+  const out = new Uint8Array(Math.ceil(n / 8))
+  for (let i = 0; i < n; i++) if (bits[i]) out[i >> 3]! |= 1 << (i & 7)
+  return out
+}
+const unpackBits = (buf: Uint8Array, n: number): Uint8Array => {
+  const out = new Uint8Array(n)
+  for (let i = 0; i < n; i++) out[i] = (buf[i >> 3]! >> (i & 7)) & 1
+  return out
+}
+const writeVarint = (out: number[], v: number): void => { while (v >= 0x80) { out.push((v & 0x7f) | 0x80); v = Math.floor(v / 128) } out.push(v) }
+const readVarint = (buf: Uint8Array, off: number): [number, number] => {
+  let v = 0, mul = 1, o = off
+  for (;;) { const b = buf[o++]!; v += (b & 0x7f) * mul; if (b < 0x80) break; mul *= 128 }
+  return [v, o - off]
+}
+const riceEncode = (gaps: number[], k: number): Uint8Array => {
+  const bits: number[] = []
+  for (const g of gaps) {
+    const q = Math.floor(g / 2 ** k)
+    for (let i = 0; i < q; i++) bits.push(1)
+    bits.push(0)
+    for (let b = k - 1; b >= 0; b--) bits.push(Math.floor(g / 2 ** b) & 1)
+  }
+  return packBits(bits, bits.length)
+}
+const riceDecode = (buf: Uint8Array, count: number, k: number): number[] => {
+  const gaps: number[] = []
+  let pos = 0
+  const bit = (): number => { const v = (buf[pos >> 3]! >> (pos & 7)) & 1; pos++; return v }
+  for (let i = 0; i < count; i++) {
+    let q = 0
+    while (bit() === 1) q++
+    let r = 0
+    for (let b = 0; b < k; b++) r = r * 2 + bit()
+    gaps.push(q * 2 ** k + r)
+  }
+  return gaps
+}
+const bitLfsrBody = (c: BitLfsrChunk): Uint8Array => {
+  const hv = new DataView(new ArrayBuffer(7))
+  hv.setUint32(0, c.originalLength); hv.setUint8(4, c.msbFirst ? 1 : 0); hv.setUint16(5, c.L)
+  const head = new Uint8Array(hv.buffer)
+  const coeffs = packBits(c.c.subarray(1), c.L)
+  const seed   = packBits(c.seed, c.L)
+  const tail: number[] = []
+  writeVarint(tail, c.errors.length)
+  writeVarint(tail, c.anchor)
+  let rice: Uint8Array = new Uint8Array(0)
+  if (c.errors.length > 0) {
+    const gaps: number[] = []
+    let prev = -1
+    for (const e of c.errors) { gaps.push(e - prev - 1); prev = e }
+    let bestK = 0, bestBits = Infinity
+    for (let k = 0; k < 24; k++) {
+      let b = 0
+      for (const g of gaps) b += k + 1 + Math.floor(g / 2 ** k)
+      if (b < bestBits) { bestBits = b; bestK = k }
+    }
+    rice = riceEncode(gaps, bestK)
+    tail.push(bestK)
+    writeVarint(tail, rice.length)
+  }
+  const out = new Uint8Array(head.length + coeffs.length + seed.length + tail.length + rice.length)
+  let o = 0
+  out.set(head, o); o += head.length
+  out.set(coeffs, o); o += coeffs.length
+  out.set(seed, o); o += seed.length
+  out.set(tail, o); o += tail.length
+  out.set(rice, o)
+  return out
+}
+const readBitLfsr = (buf: Uint8Array, off: number): [BitLfsrChunk, number] => {
+  const start = off
+  const view = new DataView(buf.buffer, buf.byteOffset)
+  const originalLength = view.getUint32(off); off += 4
+  const msbFirst = (buf[off++]! & 1) === 1
+  const L = view.getUint16(off); off += 2
+  const nb = Math.ceil(L / 8)
+  const c = new Uint8Array(L + 1); c[0] = 1
+  c.set(unpackBits(buf.subarray(off, off + nb), L), 1); off += nb
+  const seed = unpackBits(buf.subarray(off, off + nb), L); off += nb
+  const [errCount, l1] = readVarint(buf, off); off += l1
+  const [anchor, l2] = readVarint(buf, off); off += l2
+  const errors: number[] = []
+  if (errCount > 0) {
+    const k = buf[off++]!
+    const [len, l3] = readVarint(buf, off); off += l3
+    const gaps = riceDecode(buf.subarray(off, off + len), errCount, k); off += len
+    let prev = -1
+    for (const g of gaps) { prev = prev + g + 1; errors.push(prev) }
+  }
+  return [{ kind: "bit-lfsr", msbFirst, L, c, anchor, seed, errors, originalLength }, off - start]
+}
+
 // ── General chunk size + write (defined before prepare so prepare can call them) ──
 
 const preparedSize = (p: Prepared): number => {
@@ -297,6 +399,7 @@ const preparedSize = (p: Prepared): number => {
     const { prefix, init } = p.chunk
     return 1 + 4 + 1 + prefix.length + 2 + init.length + p.rWire.length  // [2]modelId instead of [2]lfsrLen+[L]coeffs
   }
+  if (p.kind === "bit-lfsr") return 1 + p.body.length
   if (p.kind === "switching-lfsr") {
     return 1 + 4 + 2 + p.chunk.segments.reduce((s, seg, i) => {
       const L = seg.lfsr.length
@@ -399,6 +502,12 @@ const writeChunk = (buf: Uint8Array, view: DataView, p: Prepared, off: number): 
     return off - start
   }
 
+  if (p.kind === "bit-lfsr") {
+    buf[off++] = KIND_BIT_LFSR
+    buf.set(p.body, off); off += p.body.length
+    return off - start
+  }
+
   if (p.kind === "switching-lfsr") {
     buf[off++] = KIND_SWITCHING_LFSR
     view.setUint32(off, p.chunk.originalLength); off += 4
@@ -450,6 +559,7 @@ const prepare = (chunk: Chunk, modelId?: number): Prepared => {
   if (chunk.kind === "cyclic")     return { kind: "cyclic",     chunk }
   if (chunk.kind === "approx-cyclic") return { kind: "approx-cyclic", chunk, rWire: wireResidual(chunk.residual) }
   if (chunk.kind === "lfsr16")     return { kind: "lfsr16",     chunk, rWire: wireResidual(chunk.residual) }
+  if (chunk.kind === "bit-lfsr")   return { kind: "bit-lfsr",   chunk, body: bitLfsrBody(chunk) }
   if (chunk.kind === "switching-lfsr")
     return { kind: "switching-lfsr", chunk, rWires: chunk.segments.map(seg => wireResidual(seg.residual)) }
   if (chunk.kind === "affine")     return { kind: "affine",     chunk, innerBuf: serializeSimpleChunk(chunk.inner) }
@@ -472,8 +582,10 @@ export const serialize = (file: CompressedFile): Uint8Array => {
   const chunkSizes = prepared.map(preparedSize)
   const n          = prepared.length
 
-  const modelTableBytes = useDictionary
-    ? 2 + models.reduce((s, m) => s + 2 + m.length, 0)
+  const usePad6 = file.chunks.some(c => c.kind === "bit-lfsr")
+  const writeTable = useDictionary || usePad6
+  const modelTableBytes = writeTable
+    ? 2 + (useDictionary ? models.reduce((s, m) => s + 2 + m.length, 0) : 0)
     : 0
 
   const chunkPayloadTotal = chunkSizes.reduce((s, cs) => s + cs, 0)
@@ -488,13 +600,13 @@ export const serialize = (file: CompressedFile): Uint8Array => {
   const view = new DataView(buf.buffer)
   let off = 0
 
-  view.setUint32(off, useDictionary ? MAGIC_V5 : MAGIC_V4); off += 4
+  view.setUint32(off, usePad6 ? MAGIC_V6 : useDictionary ? MAGIC_V5 : MAGIC_V4); off += 4
   view.setUint32(off, file.originalSize);   off += 4
   view.setUint32(off, n);                   off += 4
 
-  if (useDictionary) {
-    view.setUint16(off, models.length); off += 2
-    for (const m of models) {
+  if (writeTable) {
+    view.setUint16(off, useDictionary ? models.length : 0); off += 2
+    for (const m of (useDictionary ? models : [])) {
       view.setUint16(off, m.length); off += 2
       for (const c of m.coeffs) buf[off++] = c
     }
@@ -721,6 +833,13 @@ const readChunkInner = (
     ]
   }
 
+  if (kind === KIND_BIT_LFSR) {
+    const [chunk, consumed] = readBitLfsr(buf, off); off += consumed
+    const payloadEnd = off
+    if (isV4) { const s = view.getUint32(off); off += 4; const a = crc32(buf.subarray(start, payloadEnd)); if (s !== a) throw new Error(`CRC mismatch @${start}`) }
+    return [chunk, off - start]
+  }
+
   if (kind === KIND_SWITCHING_LFSR) {
     const originalLength = view.getUint32(off); off += 4
     const segmentCount   = view.getUint16(off);  off += 2
@@ -806,7 +925,8 @@ export const readChunkAt = (buf: Uint8Array, chunkIndex: number): Chunk | null =
   if (chunkIndex < 0 || chunkIndex >= count) return null
   const entryOff   = indexOffset + 8 + chunkIndex * 8
   const chunkStart = view.getUint32(entryOff)
-  const models = view.getUint32(0) === MAGIC_V5 ? readModelTable(buf, 12)[0] : []
+  const mg = view.getUint32(0)
+  const models = mg === MAGIC_V5 || mg === MAGIC_V6 ? readModelTable(buf, 12)[0] : []
   return readChunkInner(buf, chunkStart, true, models)[0] as Chunk
 }
 
@@ -817,16 +937,16 @@ export const deserialize = (buf: Uint8Array): CompressedFile => {
   let off = 0
 
   const magic = view.getUint32(off); off += 4
-  const isV4  = magic === MAGIC_V4 || magic === MAGIC_V5
-  if (magic !== MAGIC_V3 && magic !== MAGIC_V4 && magic !== MAGIC_V5)
-    throw new Error(`Bad magic: expected PADE, PAD4, or PAD5, got 0x${magic.toString(16)}`)
+  const isV4  = magic === MAGIC_V4 || magic === MAGIC_V5 || magic === MAGIC_V6
+  if (magic !== MAGIC_V3 && magic !== MAGIC_V4 && magic !== MAGIC_V5 && magic !== MAGIC_V6)
+    throw new Error(`Bad magic: expected PADE, PAD4, PAD5, or PAD6, got 0x${magic.toString(16)}`)
 
   const originalSize = view.getUint32(off); off += 4
   const chunkCount   = view.getUint32(off); off += 4
   const chunks: CompressedFile["chunks"] = []
 
   let models: LFSRModelEntry[] = []
-  if (magic === MAGIC_V5) { const [m, consumed] = readModelTable(buf, off); models = m; off += consumed }
+  if (magic === MAGIC_V5 || magic === MAGIC_V6) { const [m, consumed] = readModelTable(buf, off); models = m; off += consumed }
 
   if (isV4) {
     for (let i = 0; i < chunkCount; i++) {
@@ -855,16 +975,16 @@ export function* streamDeserialize(buf: Uint8Array): Iterable<Chunk> {
   let off = 0
 
   const magic = view.getUint32(off); off += 4
-  const isV4  = magic === MAGIC_V4 || magic === MAGIC_V5
-  if (magic !== MAGIC_V3 && magic !== MAGIC_V4 && magic !== MAGIC_V5)
-    throw new Error(`Bad magic: expected PADE, PAD4, or PAD5, got 0x${magic.toString(16)}`)
+  const isV4  = magic === MAGIC_V4 || magic === MAGIC_V5 || magic === MAGIC_V6
+  if (magic !== MAGIC_V3 && magic !== MAGIC_V4 && magic !== MAGIC_V5 && magic !== MAGIC_V6)
+    throw new Error(`Bad magic: expected PADE, PAD4, PAD5, or PAD6, got 0x${magic.toString(16)}`)
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _originalSize = view.getUint32(off); off += 4
   const chunkCount    = view.getUint32(off); off += 4
 
   let models: LFSRModelEntry[] = []
-  if (magic === MAGIC_V5) { const [m, consumed] = readModelTable(buf, off); models = m; off += consumed }
+  if (magic === MAGIC_V5 || magic === MAGIC_V6) { const [m, consumed] = readModelTable(buf, off); models = m; off += consumed }
 
   if (isV4) {
     let yielded = 0

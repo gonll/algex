@@ -6,7 +6,7 @@
 //   tsx src/cli.ts analyze   <input>               (algebraic structure report)
 
 import { readFileSync, writeFileSync } from "fs"
-import { encode, serialize, wrapSmallest, decompress } from "./index"
+import { encode, wrapFile, decompress } from "./index"
 import { shannonEntropy } from "./core/entropy"
 import { analyzeBuffer, formatAnalysis, toJSON } from "./core/analysis"
 
@@ -32,8 +32,7 @@ if (cmd === "decompress") {
   if (!dst) { console.error("compress requires an output path"); process.exit(1) }
   const t0   = performance.now()
   const file = encode(bytes)
-  const pade = serialize(file)
-  const out  = wrapSmallest(pade)
+  const out  = wrapFile(bytes, file)
   const ms   = (performance.now() - t0).toFixed(1)
   writeFileSync(dst, out)
 
@@ -43,8 +42,7 @@ if (cmd === "decompress") {
 } else if (cmd === "bench") {
   const t0   = performance.now()
   const file = encode(bytes)
-  const pade = serialize(file)
-  const compressed = wrapSmallest(pade)
+  const compressed = wrapFile(bytes, file)
   const t1   = performance.now()
   const restored   = decompress(compressed)
   const t2   = performance.now()

@@ -286,7 +286,7 @@ static napi_value js_bm16_solve(napi_env env, napi_callback_info info) {
   NAPI_CALL(env, napi_create_int32(env, L, &length_val));
   NAPI_CALL(env, napi_set_named_property(env, result, "length", length_val));
 
-  int nc = (L < BM16_MAX_L) ? L : 0;  /* zeroed if L exceeded cap */
+  int nc = (L <= BM16_MAX_L) ? L : 0;  /* bm16_solve fills coeffs for L <= MAX; only L > MAX is zeroed */
   NAPI_CALL(env, napi_create_array_with_length(env, (size_t)nc, &coeffs_arr));
   for (int i = 0; i < nc; i++) {
     napi_value v;

@@ -128,7 +128,21 @@ export interface SwitchingLFSRChunk {
   readonly originalLength: number
 }
 
-export type Chunk = SimpleChunk | LFSR16Chunk | DeltaChunk | AffineChunk | InterleaveChunk | BitplaneChunk | SwitchingLFSRChunk
+// Generador secuencial binario: LFSR sobre GF(2) a nivel BIT (formato PAD6, kind 11).
+// bits = bytesToBits(data, msbFirst); la secuencia es gen(c, ventana en `anchor` de L bits `seed`)
+// XOR errores dispersos (`errors`, índices de bit). Exacto cuando errors = [] y anchor = 0.
+export interface BitLfsrChunk {
+  readonly kind: "bit-lfsr"
+  readonly msbFirst: boolean
+  readonly L: number
+  readonly c: Uint8Array        // length L+1, c[0] = 1 (convención de bit-lfsr.ts), c[1..L] coeficientes
+  readonly anchor: number       // índice de bit donde empieza la ventana de semilla
+  readonly seed: Uint8Array     // L bits (0/1)
+  readonly errors: number[]     // índices de bit crecientes donde la secuencia real difiere del generador
+  readonly originalLength: number
+}
+
+export type Chunk = SimpleChunk | LFSR16Chunk | DeltaChunk | AffineChunk | InterleaveChunk | BitplaneChunk | SwitchingLFSRChunk | BitLfsrChunk
 
 export interface CompressedFile {
   readonly chunks: Chunk[]

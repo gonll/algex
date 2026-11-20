@@ -6,6 +6,7 @@ import { addon } from "../native/addon"
 import { DELTA_TRANSFORMS } from "../core/transform"
 import { mergeInterleave } from "../utils/interleave"
 import { mergeBitplanes } from "../core/bitplane"
+import { genFromAnchor, bitsToBytes } from "../core/bit-lfsr"
 
 const runLFSR = (lfsr: LFSR, init: GFElem[], n: number): GFElem[] =>
   Array.from(addon.lfsrRun(lfsr.coeffs, Buffer.from(init), n))
@@ -49,6 +50,14 @@ const decodeChunk = (chunk: CompressedFile["chunks"][number]): Uint8Array => {
 
   if (chunk.kind === "bitplane") {
     return mergeBitplanes(chunk.planes.map(p => decodeChunk(p)))
+  }
+
+  if (chunk.kind === "bit-lfsr") {
+    const n = chunk.originalLength * 8
+    const bits = genFromAnchor(n, chunk.L, chunk.c, chunk.anchor, chunk.seed)
+    if (!bits) throw new Error("bit-lfsr: modelo inválido")
+    for (const e of chunk.errors) bits[e]! ^= 1
+    return bitsToBytes(bits, chunk.msbFirst)
   }
 
   if (chunk.kind === "switching-lfsr") {

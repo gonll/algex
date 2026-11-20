@@ -26,6 +26,8 @@ import { serializeChunk, deserializeChunk } from "./format"
 import { addon } from "../native/addon"
 import { EncodeCandidate, pickBest, realSize } from "./candidates"
 import { SearchBudget, DEFAULT_BUDGET } from "./search-budget"
+import { bytesToBits, bitsToBytes, genFromAnchor, exactGateBytes, noisyGateBytes, synthLfsr2, synthNoisyLfsr2, costLfsr2, costNoisyLfsr2 } from "../core/bit-lfsr"
+import type { BitLfsrChunk } from "../types"
 
 const runLFSR = (lfsr: LFSR, init: GFElem[], n: number): GFElem[] =>
   Array.from(addon.lfsrRun(lfsr.coeffs, Buffer.from(init), n))
@@ -279,7 +281,10 @@ const tryLFSR16 = (chunk: Uint8Array): LFSR16Chunk | null => {
   const buf    = Buffer.from(chunk)
   const result = addon.bm16Solve(buf)
   const L16    = result.length
-  if (L16 === 0 || L16 > 32 || L16 * 4 >= chunk.length) return null
+  // The addon returns `length = L` but an EMPTY `coeffs` when L reaches BM16_MAX_L (= 32; c/addon.c: `nc = L < MAX ? L : 0`).
+  // A chunk with coeffs.length !== L16 would be sized by preparedSize with 0 seed bytes but written with 2*L16 seed bytes
+  // (RangeError in writeChunk), and could not be decoded: reject it. Orders 1..31 are unaffected.
+  if (L16 === 0 || L16 > 32 || result.coeffs.length !== L16 || L16 * 4 >= chunk.length) return null
 
   const wordCount = chunk.length / 2
   const seedBuf   = buf.slice(0, L16 * 2)
@@ -483,6 +488,49 @@ const laneIsStructured = (lane: Uint8Array): boolean => {
   return DELTA_TRANSFORMS.some(dt => addon.bmSolve(Buffer.from(dt.apply(window))).length <= BM_GATE_CAP)
 }
 
+// ── bit-level LFSR over GF(2) (PAD6 kind 11) ─────────────────────────────────
+// Gated: exact BM gate first (≈1% of per-chunk time on real data), then a noisy-variant gate.
+// Only produces a candidate when a model exists and its estimate beats raw; the real wire size
+// still has to win in pickBest.
+const bitLfsrCandidate = (chunk: Uint8Array, rSize: number): EncodeCandidate | null => {
+  if (chunk.length < 512) return null
+  let best: { c: BitLfsrChunk; est: number } | null = null
+  for (const msbFirst of [true, false]) {
+    const exactOk = exactGateBytes(chunk, msbFirst)
+    let c: BitLfsrChunk | null = null, bitsCost = 0
+    let bits: Uint8Array | null = null
+    if (exactOk) {
+      bits = bytesToBits(chunk, msbFirst)
+      const m = synthLfsr2(bits, 4096)
+      if (m && m.L > 0) {
+        c = { kind: "bit-lfsr", msbFirst, L: m.L, c: m.c, anchor: 0, seed: m.seed, errors: [], originalLength: chunk.length }
+        bitsCost = costLfsr2(m)
+      }
+    }
+    // Puerta ruidosa solo si la exacta no resolvió (incluye: pasó pero la síntesis exacta falló por ruido).
+    if (!c && noisyGateBytes(chunk, msbFirst)) {
+      bits = bits ?? bytesToBits(chunk, msbFirst)
+      const m = synthNoisyLfsr2(bits, 4096)
+      if (m) {
+        c = { kind: "bit-lfsr", msbFirst, L: m.L, c: m.c, anchor: m.anchor, seed: m.seed, errors: m.errors, originalLength: chunk.length }
+        bitsCost = costNoisyLfsr2(m)
+      }
+    }
+    if (!c) continue
+    // Verificación defensiva: el decoder reproduce exactamente el chunk (si no, se descarta).
+    const re = genFromAnchor(chunk.length * 8, c.L, c.c, c.anchor, c.seed)
+    if (!re) continue
+    for (const e of c.errors) re[e]! ^= 1
+    const back = bitsToBytes(re, msbFirst)
+    let same = back.length === chunk.length
+    for (let i = 0; same && i < chunk.length; i++) if (back[i] !== chunk[i]) same = false
+    if (!same) continue
+    const est = 1 + 4 + 1 + 2 + Math.ceil(bitsCost / 8) + 4
+    if (est < rSize / 4 && (!best || est < best.est)) best = { c, est }  // ≥4× menor que crudo: un ajuste con ~33% de error no es estructura (medido en start.elf)
+  }
+  return best ? { chunk: best.c, estimatedSize: best.est, label: "bit-lfsr" } : null
+}
+
 // ── encodeChunk: top-level entry point ────────────────────────────────────────
 //
 // Compares the whole-chunk representation against every delta-wrapped variant
@@ -518,6 +566,9 @@ export const encodeChunk = (chunk: Uint8Array, budget: SearchBudget = DEFAULT_BU
     }
   }
 
+  const bl = budget.enableBitLfsr ? bitLfsrCandidate(chunk, rSize) : null
+  if (bl) candidates.push(bl)
+
   return pickBest(candidates, budget.maxExpensiveCandidates, "top-level") as Chunk
 }
 
@@ -536,11 +587,52 @@ const coeffsMatch = (a: { coeffs: number[]; length: number }, b: { coeffs: numbe
   return true
 }
 
+// Fusión de bit-lfsr exactos consecutivos: mismo modelo y estado continuo (la semilla del
+// siguiente es la continuación natural del anterior). Sin esto, cada chunk de ≤4 KB paga su
+// propia cabecera y un PRBS corto (p. ej. PRBS7) empeora frente al camino GF(2^8) fusionado.
+const bitLfsrSameModel = (a: BitLfsrChunk, b: BitLfsrChunk): boolean =>
+  a.msbFirst === b.msbFirst && a.L === b.L && a.errors.length === 0 && b.errors.length === 0 &&
+  a.anchor === 0 && b.anchor === 0 && a.c.every((v, k) => v === b.c[k])
+
+const lastBits = (c: BitLfsrChunk): Uint8Array => {
+  const bits = genFromAnchor(c.originalLength * 8, c.L, c.c, 0, c.seed)!
+  return bits.slice(bits.length - c.L)
+}
+
+const mergeBitLfsr = (chunks: Chunk[], start: number): [BitLfsrChunk, number] => {
+  let merged = chunks[start] as BitLfsrChunk
+  let end = lastBits(merged)
+  let j = start + 1
+  while (j < chunks.length) {
+    const next = chunks[j]!
+    if (next.kind !== "bit-lfsr" || !bitLfsrSameModel(merged, next)) break
+    // continuación de L bits a partir del estado final
+    const L = merged.L
+    const ext = new Uint8Array(2 * L)
+    ext.set(end)
+    for (let i = L; i < 2 * L; i++) { let v = 0; for (let q = 1; q <= L; q++) v ^= merged.c[q]! & ext[i - q]!; ext[i] = v }
+    let continuous = true
+    for (let k = 0; k < L; k++) if (ext[L + k] !== next.seed[k]) { continuous = false; break }
+    if (!continuous) break
+    end = lastBits(next)
+    merged = { ...merged, originalLength: merged.originalLength + next.originalLength }
+    j++
+  }
+  return [merged, j]
+}
+
 const mergeCompatibleChunks = (chunks: Chunk[]): Chunk[] => {
   const result: Chunk[] = []
   let i = 0
   while (i < chunks.length) {
     const curr = chunks[i]!
+    if (curr.kind === "bit-lfsr") {
+      if (curr.errors.length === 0 && curr.anchor === 0) {
+        const [m, j] = mergeBitLfsr(chunks, i)
+        result.push(m); i = j
+      } else { result.push(curr); i++ }
+      continue
+    }
     if (curr.kind !== "lfsr") { result.push(curr); i++; continue }
 
     const L = curr.lfsr.length

@@ -22,12 +22,15 @@ export interface SearchBudget {
   // (real encode + compare) verification pass, out of however many the cheap
   // model-distance scan proposes.
   readonly maxBoundaryChecks: number
+  // Bit-level LFSR over GF(2) candidate (PAD6 kind 11). Gated and cheap (~5% of per-chunk time on
+  // non-algebraic real data, docs/research); false disables it entirely (A/B measurement, PAD4/5-only output).
+  readonly enableBitLfsr: boolean
 }
 
 export const BUDGETS = {
-  fast:     { maxExpensiveCandidates: 2, maxTransformDepth: 1, maxModelSolves: 2, maxBoundaryChecks: 2 },
-  balanced: { maxExpensiveCandidates: 4, maxTransformDepth: 2, maxModelSolves: 5, maxBoundaryChecks: 4 },
-  max:      { maxExpensiveCandidates: 8, maxTransformDepth: 2, maxModelSolves: 5, maxBoundaryChecks: 8 },
+  fast:     { maxExpensiveCandidates: 2, maxTransformDepth: 1, maxModelSolves: 2, maxBoundaryChecks: 2, enableBitLfsr: true },
+  balanced: { maxExpensiveCandidates: 4, maxTransformDepth: 2, maxModelSolves: 5, maxBoundaryChecks: 4, enableBitLfsr: true },
+  max:      { maxExpensiveCandidates: 8, maxTransformDepth: 2, maxModelSolves: 5, maxBoundaryChecks: 8, enableBitLfsr: true },
 } as const satisfies Record<string, SearchBudget>
 
 export type CompressionMode = keyof typeof BUDGETS
