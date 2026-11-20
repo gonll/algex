@@ -1,6 +1,6 @@
 {
   "name": "pade-compress",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Algebraic compressor for GF(2⁸) linear recurrences — Berlekamp-Massey + LFSR encoding for PRBS streams, firmware, and telecom payloads",
   "author": "Gonzalo Herrera Llobeta <gonzalo@builder.io>",
   "license": "AGPL-3.0-only",
@@ -35,8 +35,11 @@
     "dist/src/",
     "dist/examples/",
     "c/",
+    "!c/*.o",
+    "!c/*.d",
+    "!c/gf-analyze",
+    "!c/gf-analyze.exe",
     "binding.gyp",
-    "build/Release/pade_compress_addon.node",
     "README.md",
     "LICENSE"
   ],
@@ -58,7 +61,9 @@
     "test:watch": "vitest",
     "test:file": "npm run compress ./test/gf-structured.bin ./test/gf-structured-compressed.bin && npm run decompress ./test/gf-structured-compressed.bin ./test/gf-structured-result.bin && node scripts/run-gf-analyze.cjs ./test/gf-structured.bin",
     "prepublishOnly": "npm run build",
-    "build:exe": "npm run build && node-gyp rebuild && npx @yao-pkg/pkg dist/src/cli.js --target node20 --output pade-compress"
+    "build:exe": "npm run build && node-gyp rebuild && npx @yao-pkg/pkg dist/src/cli.js --target node20 --output pade-compress",
+    "typecheck": "tsc --noEmit",
+    "typecheck:lab": "tsc -p tsconfig.lab.json"
   },
   "pkg": {
     "scripts": "dist/**/*.js",

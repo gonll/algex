@@ -29,8 +29,16 @@ function loadAddon(): NativeAddon {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require(sidecar) as NativeAddon
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require("../../build/Release/pade_compress_addon") as NativeAddon
+  // Desde el código fuente (tsx/vitest) el addon está en <raíz>/build; desde el paquete compilado este
+  // archivo vive en <raíz>/dist/src/native, así que la raíz queda un nivel más arriba.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("../../build/Release/pade_compress_addon") as NativeAddon
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "MODULE_NOT_FOUND") throw e
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("../../../build/Release/pade_compress_addon") as NativeAddon
+  }
 }
 
 export const addon = loadAddon()
