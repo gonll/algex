@@ -2,7 +2,7 @@
 
 Sigue [Keep a Changelog](https://keepachangelog.com/) y [SemVer](https://semver.org/lang/es/). Mientras la versión sea 0.x, un cambio de formato que impide a versiones anteriores leer archivos nuevos se publica como *minor*.
 
-## [0.2.0] — sin publicar
+## [0.2.0] — 2026-11-20
 
 ### Añadido
 - **PAD6** (`kind=11`, `bit-lfsr`): LFSR sobre GF(2) a nivel bit con residual de posiciones Rice. Se emite solo si algún chunk lo usa; si no, la salida es byte-idéntica a PAD4/PAD5. Desactivable con `enableBitLfsr: false` en el `SearchBudget`.
