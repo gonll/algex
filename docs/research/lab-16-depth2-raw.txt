@@ -1,0 +1,9 @@
+G11 j=4        depth=3 | desc  5/5 acept  5 | costo med 500 | ms med   2253 máx 2620 | trabajo med 1812M
+G11 j=4        depth=4 | desc  5/5 acept  5 | costo med 288 | ms med   4636 máx 4708 | trabajo med 4766M
+G11 j=4        depth=5 | desc  4/5 acept  5 | costo med 288 | ms med  10760 máx 25439 | trabajo med 12773M
+G11 j=5        depth=3 | desc  0/5 acept  0 | costo med — | ms med   1567 máx 1609 | trabajo med 2742M
+G11 j=5        depth=4 | desc  5/5 acept  5 | costo med 376 | ms med   7833 máx 7910 | trabajo med 8535M
+G11 j=5        depth=5 | desc  4/5 acept  5 | costo med 376 | ms med  20960 máx 21090 | trabajo med 20551M
+G11 j=6        depth=3 | desc  0/5 acept  0 | costo med — | ms med   1552 máx 1605 | trabajo med 2740M
+G11 j=6        depth=4 | desc  5/5 acept  5 | costo med 524 | ms med   4794 máx 4958 | trabajo med 7305M
+G11 j=6        depth=5 | desc  5/5 acept  5 | costo med 524 | ms med  23057 máx 23633 | trabajo med 22864M

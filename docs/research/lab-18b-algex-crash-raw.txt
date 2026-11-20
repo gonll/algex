@@ -1,0 +1,5 @@
+Sub_metering_1: 196590 bytes (n=65530, w=3)
+  fast      completo: ERROR offset is out of bounds
+  balanced  completo: ERROR offset is out of bounds
+  max       completo: ERROR offset is out of bounds
+  prefijo mínimo que falla con "max": 112904 bytes (con 112903 bytes: ok 3484)

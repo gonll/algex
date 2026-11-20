@@ -1,0 +1,10 @@
+Lote C (depth) 5/clase N=65536 8000 ms maxDepth=5. hashes compose=ed9d9e12 ast=48e3ef99 probes=570dbdbf hidden-compose=750e168b
+
+clase      | desc | acept | exacta-no-acept | costo mediano (aceptadas) vs brotli | ms med | rutas
+G11 j=4    |  0/5 |   0/5 |               5 |                                  — |   8861 | 
+G11 j=5    |  0/5 |   0/5 |               0 |                                  — |  12044 | 
+G11 j=6    |  0/5 |   0/5 |               0 |                                  — |  15902 | 
+G11 j=7    |  0/5 |   4/5 |               0 |                    33796 vs 235912 |  15965 | adelta>il2>(il2>(il2>(il2>(literal|p×4
+
+Por grupo (descubiertas / aceptadas / exactas-no-aceptadas / total):
+  rejilla 2-ádica                  0 / 4 / 5 / 20

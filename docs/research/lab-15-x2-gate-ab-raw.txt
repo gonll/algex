@@ -1,0 +1,4 @@
+X2 semillas 2001-2010 control=legacy descubiertas 9/10  (tiempo medio 1699 ms)
+X2 semillas 2001-2010 control=bound  descubiertas 7/10  (tiempo medio 12460 ms)
+X2 semillas 3001-3010 control=legacy descubiertas 6/10  (tiempo medio 3493 ms)
+X2 semillas 3001-3010 control=bound  descubiertas 5/10  (tiempo medio 8339 ms)

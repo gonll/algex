@@ -1,0 +1,25 @@
+Exp. 14 BLIND BL3_bigFlows_seg200MB: test/real-data/pcap-blind/BL3_bigFlows_seg200MB.pcap (23999937 bytes, sha256 b03e54c8b68d). pcapcodec=599fe553 encoder=fa624381
+
+análisis: 49544 paquetes, IPv4 49536, IPv6 8, TCP 41158, UDP 8243, crudos 0 (0.0 %), enlace 1, tiempo de análisis 64 ms; carga útil 20537869 B, rawpk 0 B, opts 95580 B (85.6 % del archivo es carga útil)
+
+brazo                              bytes | vs W0 | exacto | enc ms | dec ms | selec ms
+W0 brotli-11 (lgwin 24)          17132710 |  —    |   —    |  52547 |    114 |
+W1 Algex max (archivo)           17191965 | 0.35% |  —    | 139382 |   —    | 
+W2 col                           17281030 |   0.87% |   sí   |  49741 |    219 |  49688 
+W3 col+gen                       17259957 |   0.74% |   sí   |  49475 |    200 |  49428 
+W4 ctx                           17028238 |  -0.61% |   sí   |  49652 |    266 |  49607 (tiempo combinado)
+W5 ctx+ck                        16850011 |  -1.65% |   sí   |  48530 |    314 |  48475 (tiempo combinado)
+
+Atribución del ahorro (bytes y % de W0):
+  conocer la disposición (W0→W2)                    -148320 B  -0.87 %
+  predicción genérica sin protocolo (W2→W3)           21073 B  0.12 %
+  estado/semántica TCP-IP (W3→W4)                    231719 B  1.35 %
+  álgebra de checksums (W4→W5)                       178227 B  1.04 %
+
+MEJORA NETA NI = 1 − W5 / min(W0,W1) = 1.65 %   (W5 16850011 B vs min(W0,W1) 17132710 B)
+
+Flujos más grandes por brazo (bytes):
+  W2 col       payload=16362531  tcp.seq=97012  ip4.cksum=89729  ip4.id=81578  tcp.ack=79854  tcp.cksum=75445  rec.ts_frac=75007  ip4.src=40462
+  W3 col+gen   payload=16362531  tcp.seq=97012  ip4.cksum=85871  ip4.id=81520  tcp.ack=79854  tcp.cksum=76008  rec.ts_frac=57287  ip4.src=40462
+  W4 ctx       payload=16362531  ip4.cksum=85871  tcp.cksum=76008  time=57501  ip4.src=40462  ip4.dst=38145  ip4.id=35110  tcp.win=31955
+  W5 ctx+ck    payload=16362531  time=57501  ip4.src=40462  ip4.dst=38145  ip4.id=35110  tcp.win=31955  tcp.ack=31161  tcp.sport=30054

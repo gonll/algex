@@ -1,0 +1,25 @@
+Exp. 14 DEV bigFlows-prefix24MB: test/real-data/pcap/bigFlows_prefix24MB.pcap (24000000 bytes, sha256 0d1ff3236e2e). pcapcodec=599fe553 encoder=fa624381
+
+análisis: 58415 paquetes, IPv4 58357, IPv6 58, TCP 45400, UDP 12469, crudos 0 (0.0 %), enlace 1, tiempo de análisis 60 ms; carga útil 19982049 B, rawpk 0 B, opts 87896 B (83.3 % del archivo es carga útil)
+
+brazo                              bytes | vs W0 | exacto | enc ms | dec ms | selec ms
+W0 brotli-11 (lgwin 24)          16128428 |  —    |   —    |  54295 |    116 |
+W1 Algex max (archivo)                NaN | — |  —    |      — |   —    | 
+W2 col                           16310062 |   1.13% |   sí   |  47013 |    246 |  46955 
+W3 col+gen                       16279096 |   0.93% |   sí   |  45848 |    213 |  45797 
+W4 ctx                           16019226 |  -0.68% |   sí   |  46268 |    283 |  46221 (tiempo combinado)
+W5 ctx+ck                        15812935 |  -1.96% |   sí   |  44881 |    320 |  44828 (tiempo combinado)
+
+Atribución del ahorro (bytes y % de W0):
+  conocer la disposición (W0→W2)                    -181634 B  -1.13 %
+  predicción genérica sin protocolo (W2→W3)           30966 B  0.19 %
+  estado/semántica TCP-IP (W3→W4)                    259870 B  1.61 %
+  álgebra de checksums (W4→W5)                       206291 B  1.28 %
+
+MEJORA NETA NI = 1 − W5 / min(W0,W1) = 1.96 %   (W5 15812935 B vs min(W0,W1) 16128428 B; W1 no medido: NI contra W0)
+
+Flujos más grandes por brazo (bytes):
+  W2 col       payload=15240572  tcp.seq=107396  ip4.cksum=104066  ip4.id=93292  tcp.ack=89665  rec.ts_frac=89480  tcp.cksum=88082  ip4.src=48299
+  W3 col+gen   payload=15240572  tcp.seq=107396  ip4.cksum=99674  ip4.id=94073  tcp.ack=89665  tcp.cksum=81894  rec.ts_frac=68313  ip4.src=48299
+  W4 ctx       payload=15240572  ip4.cksum=99674  tcp.cksum=81894  time=70851  ip4.src=48299  ip4.dst=45648  ip4.id=37093  eth.src=36378
+  W5 ctx+ck    payload=15240572  time=70851  ip4.src=48299  ip4.dst=45648  ip4.id=37093  eth.src=36378  tcp.ack=35096  ip4.len=34564

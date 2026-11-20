@@ -1,0 +1,22 @@
+Lote C (grid) 10/clase N=65536 8000 ms maxDepth=3. hashes compose=ed9d9e12 ast=48e3ef99 probes=570dbdbf hidden-compose=750e168b
+
+clase      | desc | acept | exacta-no-acept | costo mediano (aceptadas) vs brotli | ms med | rutas
+G11 j=0    | 10/10 | 10/10 |               0 |                         41 vs 2184 |    130 | poly×10
+G11 j=1    | 10/10 | 10/10 |               0 |                         91 vs 4240 |    194 | poly×10
+G11 j=2    | 0/10 |  2/10 |               8 |                        158 vs 8328 |    852 | adelta>il2>(mulo>beatty|poly)×2
+G11 j=3    | 7/10 |  8/10 |               2 |                       724 vs 16184 |   1205 | il2>(idxq>il2>(poly|poly)|idxq>il2>(×6 il2>(idxq>anf|idxq>il2>(poly|poly))×1 adelta>il2>(mulo>beatty|idxq>anf)×1
+G11 j=4    | 10/10 | 10/10 |               0 |                       756 vs 32920 |   1514 | il2>(il2>(il2>(poly|poly)|il2>(poly|×5 il2>(il2>(il2>(poly|poly)|idxq>anf)|×1 il2>(il2>(il2>(beatty|beatty)|il2>(b×2 il2>(il2>(idxq>anf|il2>(beatty|beatt×1 il2>(il2>(idxq>anf|idxq>anf)|il2>(il×1
+G11 j=5    | 0/10 |  0/10 |              10 |                                  — |   1183 | 
+G11 j=6    | 0/10 |  0/10 |              10 |                                  — |   1194 | 
+G11 j=8    | 0/10 |  0/10 |               0 |                                  — |    NaN | 
+G12 j=0    | 10/10 | 10/10 |               0 |                         33 vs 1160 |    137 | poly×10
+G12 j=1    | 10/10 | 10/10 |               0 |                         99 vs 1936 |    212 | poly×10
+G12 j=2    | 0/10 |  0/10 |              10 |                                  — |    172 | 
+G12 j=3    | 3/10 |  3/10 |               7 |                        756 vs 5488 |   1027 | il2>(idxq>il2>(poly|poly)|idxq>il2>(×3
+G12 j=4    | 5/10 |  5/10 |               5 |                        820 vs 6280 |   1828 | il2>(il2>(il2>(poly|poly)|il2>(poly|×5
+G12 j=5    | 0/10 |  0/10 |              10 |                                  — |   1460 | 
+G12 j=6    | 0/10 |  0/10 |              10 |                                  — |   1375 | 
+G12 j=8    | 0/10 |  0/10 |               9 |                                  — |   1433 | 
+
+Por grupo (descubiertas / aceptadas / exactas-no-aceptadas / total):
+  rejilla 2-ádica                  65 / 68 / 81 / 160

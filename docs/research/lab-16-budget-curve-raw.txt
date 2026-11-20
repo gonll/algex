@@ -1,0 +1,8 @@
+X1#2 W=700M  cost=945 work=9801M ms=1365 anf
+X1#2 W=1500M  cost=945 work=21001M ms=2801 anf
+X1#2 W=3000M  cost=945 work=42001M ms=5888 anf
+X1#2 W=6000M  cost=109 work=43915M ms=7527 baff
+X1#8 W=700M  cost=747 work=9801M ms=1365 anf
+X1#8 W=1500M  cost=747 work=21001M ms=2909 anf
+X1#8 W=3000M  cost=747 work=42001M ms=7011 anf
+X1#8 W=6000M  cost=125 work=47408M ms=8632 baff

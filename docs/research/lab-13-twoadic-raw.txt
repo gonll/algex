@@ -1,0 +1,16 @@
+C1  coeficientes de Mahler de (n mod 2) mod 256: 0,1,254,4,248,16,224,64,128,0,0,0  | (-2)^(k-1) mod 256: 0,1,254,4,248,16,224,64,128,0,0,0 | nº coef = 9
+
+C2/C3/C4: nº de coeficientes de Mahler mod 256 (mín/máx sobre 30 instancias aleatorias por celda; -1 = más de 90)
+j | C2 f_j (k=0) | C3 diezmado k=1 (j'=j-1) | k=2 | k=3 | C4 P(f_j) k=0
+0 |       2–2 |       2–2 |       2–2 |       2–2 |       3–3
+1 |     10–10 |       2–2 |       2–2 |       2–2 |     11–11
+2 |     19–19 |     10–10 |       2–2 |       2–2 |     21–21
+3 |     37–37 |     19–19 |     10–10 |       2–2 |     41–41
+4 |     73–73 |     37–37 |     19–19 |     10–10 |     81–81
+5 |     -1–-1 |     73–73 |     37–37 |     19–19 |     -1–-1
+6 |     -1–-1 |     -1–-1 |     73–73 |     37–37 |     -1–-1
+7 |     -1–-1 |     -1–-1 |     -1–-1 |     73–73 |     -1–-1
+8 |     -1–-1 |     -1–-1 |     -1–-1 |     -1–-1 |     -1–-1
+9 |     -1–-1 |     -1–-1 |     -1–-1 |     -1–-1 |     -1–-1
+
+Lectura esperada del lema: la columna 'k' del diezmado coincide con la columna k=0 de la fila j-k.

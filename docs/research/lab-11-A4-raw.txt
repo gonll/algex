@@ -1,0 +1,10 @@
+Lote A: 10/clase, N=65536, presupuesto 20000 ms, generalización en TODOS los índices de [N, 2^20). hashes compose=2de99fdf ast=48e3ef99 probes=570dbdbf
+
+clase | composición                         | congelado(09) desc | sin composición desc | MOTOR desc/sobreaj/fallo | costo mediano vs brotli (aceptadas) | ms med | rutas
+A1    | xorc∘poly                           |                  1 |                    0 |                    9/0/1 |                          45 vs 2184 |  22363 | xorc>poly×9
+A2    | rotl∘poly                           |                  0 |                    0 |                   10/0/0 |                          40 vs 1832 |  20599 | rotl>poly×10
+A3    | mulo∘beatty                         |                  3 |                    4 |                   10/0/0 |                          50 vs 6432 |   1381 | mulo>beatty×7 poly×2 beatty×1
+A4    | xorc∘beatty                         |                  0 |                    0 |                   10/0/0 |                          53 vs 7440 |    535 | xorc>beatty×10
+A5    | addc∘poly                           |                 10 |                   10 |                   10/0/0 |                          33 vs 1160 |   2614 | poly×10
+
+TOTAL: descubiertas 49/50, sobreajustes 0, fallos 1

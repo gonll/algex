@@ -1,0 +1,27 @@
+
+== A) PRBS31 128 KiB + ruido de bits (por el encoder real; cota Shannon H(p)·n/8) ==
+caso                               |       n | enc ON  | compress| enc OFF | brotli  | bitLFSR chunks | exacto
+PRBS31 ruido 0.0%                  |  131072 |      57 |      57 |   68129 |  131077 | 1/1           | ✓ cota 0B
+PRBS31 ruido 0.1%                  |  131072 |    2632 |    2232 |  131641 |  131077 | 32/32         | ✓ cota 1495B
+PRBS31 ruido 0.5%                  |  131072 |    7218 |    6851 |  131641 |  131077 | 32/32         | ✓ cota 5953B
+PRBS31 ruido 1.0%                  |  131072 |   11796 |   11429 |  131641 |  131077 | 32/32         | ✓ cota 10590B
+PRBS31 ruido 2.0%                  |  131072 |   61725 |   61725 |  131641 |  131077 | 20/32         | ✓ cota 18539B
+PRBS31 ruido 3.0%                  |  131072 |   98970 |   98970 |  131641 |  131077 | 10/32         | ✓ cota 25479B
+PRBS31 ruido 5.0%                  |  131072 |  131641 |  131568 |  131641 |  131077 | 0/32          | ✓ cota 37539B
+
+== B) LFSR aleatorio denso, grado L (128 KiB, exacto) — límite de puerta: L<=64 ==
+caso                               |       n | enc ON  | compress| enc OFF | brotli  | bitLFSR chunks | exacto
+LFSR L=32                          |  131072 |      57 |      57 |   44319 |  131077 | 1/1           | ✓ 
+LFSR L=40                          |  131072 |      59 |      59 |  131641 |  131077 | 1/1           | ✓ 
+LFSR L=48                          |  131072 |      61 |      61 |  131641 |  131077 | 1/1           | ✓ 
+LFSR L=64                          |  131072 |      65 |      65 |  131641 |  131077 | 1/1           | ✓ 
+LFSR L=72                          |  131072 |  131641 |  131575 |  131641 |  131077 | 0/32          | ✓ 
+LFSR L=96                          |  131072 |  131641 |  131574 |  131641 |  131077 | 0/32          | ✓ 
+-- con ruido 0.5% --
+LFSR L=32 + 0.5% ruido             |  131072 |    7073 |    6699 |  131641 |  131077 | 32/32         | ✓ 
+LFSR L=48 + 0.5% ruido             |  131072 |  131641 |  131567 |  131641 |  131077 | 0/32          | ✓ 
+
+== C) Archivo mixto: PRBS31 | firmware | PRBS23+0.5% | texto | LFSR48 | firmware | PRBS31 (mismo polinomio) ==
+caso                               |       n | enc ON  | compress| enc OFF | brotli  | bitLFSR chunks | exacto
+mixto (7 segmentos)                |  212992 |   88797 |   62888 |  182702 |  153978 | 11/37         | ✓ 
+sólo los 3 segmentos de datos reales |   81920 |   81914 |   56068 |   81914 |   55532 | 0/25        | ✓ 

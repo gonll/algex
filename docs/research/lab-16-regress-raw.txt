@@ -1,0 +1,7 @@
+A1             depth=3 | desc 10/10 acept 10 | costo med 45 | ms med    223 máx 305 | trabajo med 548M
+A2             depth=3 | desc 10/10 acept 10 | costo med 40 | ms med    191 máx 197 | trabajo med 500M
+A3             depth=3 | desc 10/10 acept 10 | costo med 50 | ms med   5068 máx 11518 | trabajo med 7058M
+A4             depth=3 | desc 10/10 acept 10 | costo med 53 | ms med   1285 máx 1390 | trabajo med 2110M
+A5             depth=3 | desc 10/10 acept 10 | costo med 33 | ms med    258 máx 298 | trabajo med 1254M
+X1             depth=3 | desc  8/10 acept  8 | costo med 125 | ms med   1444 máx 1708 | trabajo med 9634M
+X2             depth=3 | desc  9/10 acept  9 | costo med 183 | ms med   1766 máx 2953 | trabajo med 4824M

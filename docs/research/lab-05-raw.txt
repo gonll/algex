@@ -1,0 +1,3 @@
+ronda 1: sin 6627ms/2487635B | con 7262ms/2487635B | sobrecosto 9.6% | tamaño idéntico
+ronda 2: sin 6637ms/2487635B | con 7319ms/2487635B | sobrecosto 10.3% | tamaño idéntico
+ronda 3: sin 6604ms/2487635B | con 7067ms/2487635B | sobrecosto 7.0% | tamaño idéntico

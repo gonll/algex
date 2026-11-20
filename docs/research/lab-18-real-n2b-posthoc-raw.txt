@@ -1,0 +1,26 @@
+Exp. 13 datos reales. hashes compose=c1898eee decimate=309e43af realfit=bb38a010 columns=55cf2973 encoder=d5bb5aa2
+
+# N2b UCI (post hoc, ? = vacío): 7 columnas numéricas; descartadas 2: Date(no numérica), Time(no numérica)
+
+7 columnas a evaluar (n ≥ 2048).
+
+dataset / columna                       n w |       B0       B1       B2       B3    Algex | S(sint) | ahorro | planos (A=acept, X=exacto, m) | ms-sint ms-brotli ms-Algex | pred+resid | monot. Hδ
+N2 Global_active_power              65530 2 |   569592   511296   505512   545272   569600 |   508964 | 0            | · ·                                | 11644 2540 2719 w=0.0G     | 538906 cuadrático | 0.51 7.1
+N2 Global_reactive_power            65530 2 |   353456   337216   362136   405032   485560 |   336596 | 0            | · ·                                | 8306 2211 4243 w=0.0G      | 365778 lineal | 0.67 4.7
+N2 Voltage                          65530 2 |   783344   748456   693176   712992   783352 |   744972 | 0            | · ·                                | 6765 1407 1079 w=0.0G      | 769138 cuadrático | 0.50 8.2
+N2 Global_intensity                 65530 2 |   261992   395840   343392   396376   262000 |   397076 | 0            | · ·                                | 6163 1489 8217 w=0.0G      | 487522 lineal | 0.76 3.1
+N2 Sub_metering_1                   65530 3 |    22992    33472    44408    50376    ERROR |    34079 | 0            | · · ·                              | 32954 419 1530 w=4.3G      | 54260 lineal | 0.97 0.5
+N2 Sub_metering_2                   65530 3 |    57472    84656   110456   119448    ERROR |    85047 | 0            | · · ·                              | 28893 2541 17920 w=6.1G    | 134204 cuadrático | 0.89 1.3
+N2 Sub_metering_3                   65530 2 |    44632    79448    84096    91752    95536 |    84836 | 0            | · ·                                | 6447 1012 3795 w=0.0G      | 101874 lineal | 0.89 1.1
+
+— controles: filas barajadas (misma distribución, sin orden) —
+
+=== RESUMEN por conjunto (columnas reales; S sintéticas aparte) ===
+N2b UCI-post-hoc   columnas 7 (cortas 0, descartadas-CSV 2) evaluadas 7 | éxitos 0 | fórmula sin ahorro 0 | sobreajuste (aceptado-no-exacto) 0 planos | ahorro neto 718 bits de 1923682 (0.04%) | cobertura (bytes con éxito / bytes de columnas) 0.0% | / bytes de archivo 0.00%
+TOTAL reales: ahorro neto 718 bits de 1923682 (0.037%); bytes con éxito 0 de 1048480
+
+Columnas reales: éxitos 0/7; fórmula sin ahorro 0; con algún plano aceptado-no-exacto 0
+Controles barajados (reales): éxitos (falsos positivos) 0/7; fórmula sin ahorro 0; aceptados-no-exactos 0
+Trabajo determinista del sintetizador (reales): 10.4 G unidades
+Tiempo total: sintetizador 101172 ms | brotli(4 baselines) 11619 ms | Algex 39503 ms | razón sint/brotli 9×
+Predictor+residual (análisis) en 7 columnas sin éxito del sintetizador: gana al baseline en 0; razón mediana vs min(B2,B3) = 1.211

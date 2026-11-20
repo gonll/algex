@@ -1,0 +1,27 @@
+Lote C (main) 10/clase N=65536 8000 ms maxDepth=3. hashes compose=2ce8c5ee ast=48e3ef99 probes=570dbdbf hidden-compose=750e168b
+
+clase      | desc | acept | exacta-no-acept | costo mediano (aceptadas) vs brotli | ms med | rutas
+B1         | 10/10 | 10/10 |               0 |                        117 vs 2192 |   8059 | baff>poly×10
+B2         | 9/10 |  9/10 |               1 |                        109 vs 1944 |  10366 | baff>poly×9
+B3         | 7/10 |  7/10 |               3 |                        183 vs 2968 |   2083 | idxq>idxlift>poly×4 idxq>anf×2 idxq>il2>(anf|anf)×1
+B4         | 10/10 | 10/10 |               0 |                      1008 vs 10864 |   1818 | idxq>xdelta>il2>(literal|anf)×1 idxq>idxlift>poly×2 idxq>il2>(anf|anf)×1 idxq>adelta>il2>(literal|anf)×5 idxq>literal×1
+B8         | 10/10 | 10/10 |               0 |                        117 vs 2184 |  11237 | baff>poly×10
+B14        | 10/10 | 10/10 |               0 |                        130 vs 1208 |   8261 | xdelta>baff>poly×10
+X1         | 10/10 | 10/10 |               0 |                        117 vs 2192 |  19497 | baff>poly×10
+X2         | 5/10 |  5/10 |               5 |                        984 vs 7248 |  10584 | idxq>adelta>il2>(literal|anf)×2 idxq>idxlift>poly×1 idxq>il2>(xorc>poly|anf)×1 idxq>anf×1
+D1         | 9/10 |  9/10 |               1 |                        117 vs 2008 |  19697 | baff>poly×9
+D3         | 9/10 |  9/10 |               1 |                        191 vs 3616 |   2926 | idxq>idxlift>poly×6 il2>(idxq>idxlift>poly|idxq>idxlift>×1 idxq>il2>(anf|anf)×1 idxq>anf×1
+B5         | 5/10 |  5/10 |               3 |                        254 vs 4224 |  11755 | baff>poly×2 il2>(baff>poly|baff>poly)×1 il2>(il2>(baff>poly|baff>poly)|il2>(×2
+B9         | 0/10 |  0/10 |              10 |                                  — |   1749 | 
+B10        | 0/10 |  0/10 |               9 |                                  — |   3083 | 
+C1         | 10/10 | 10/10 |               0 |                      1242 vs 16536 |   1643 | il2>(anf|anf)×4 anf×5 il2>(il2>(anf|anf)|il2>(il2>(gf2|gf2×1
+C2         | 0/10 |  0/10 |               9 |                                  — |   2172 | 
+H          | 0/10 |  0/10 |               0 |                                  — |    NaN | 
+R          | 0/10 |  0/10 |               0 |                                  — |    NaN | 
+T          | 0/10 |  0/10 |               0 |                                  — |    NaN | 
+
+Por grupo (descubiertas / aceptadas / exactas-no-aceptadas / total):
+  1 diseñada (tipo ya visto)       71 / 71 / 9 / 80
+  2 diseñada (composición nueva)   18 / 18 / 2 / 20
+  3 fuera de diseño                15 / 15 / 31 / 50
+  4 control                        0 / 0 / 0 / 30

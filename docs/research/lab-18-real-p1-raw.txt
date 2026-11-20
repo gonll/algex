@@ -1,0 +1,47 @@
+Exp. 13 datos reales. hashes compose=c1898eee decimate=309e43af realfit=bb38a010 columns=55cf2973 encoder=d5bb5aa2
+
+# P1 smallFlows: 14261 paquetes, 32 columnas
+
+25 columnas a evaluar (n ≥ 2048).
+
+dataset / columna                       n w |       B0       B1       B2       B3    Algex | S(sint) | ahorro | planos (A=acept, X=exacto, m) | ms-sint ms-brotli ms-Algex | pred+resid | monot. Hδ
+P1 rec.ts_sec                       14261 2 |     4320     4240     3312     6664     7224 |     4384 | 0            | · A!m1:8                           | 5282 277 4191 w=0.0G       | 6174 lineal | 1.00 0.1
+P1 rec.ts_usec                      14261 3 |   233192   205368   168848   208352   233200 |   204811 | 0            | · · ·                              | 9914 1299 612 w=0.0G       | 219528 lineal | 0.98 10.1
+P1 rec.caplen                       14261 2 |    56824    68792    92464   109104    56832 |    68344 | 0            | · ·                                | 5982 523 601 w=0.0G        | 85438 lineal | 0.62 6.3
+P1 rec.origlen                      14261 2 |    56824    68792    92464   109104    56832 |    68344 | 0            | · ·                                | 4907 392 401 w=0.0G        | 85438 lineal | 0.62 6.3
+P1 eth.dst                          14261 6 |    27880   116376   142528   169152    37696 |   126310 | 0            | · · · · · ·                        | 13918 1268 940 w=0.0G      | 351328 lineal | 0.72 2.6
+P1 eth.src                          14261 6 |    26696   115088   137960   165632    41800 |   119110 | 0            | · · · · · ·                        | 13064 1105 668 w=0.0G      | 336440 lineal | 0.72 2.5
+P1 eth.type                         14261 1 |      480      480      496      496     1080 |      575 | 0            | ·                                  | 72516 17 39 w=16.7G        | 718 lineal | 1.00 0.0
+P1 ip.ver_ihl                       14243 1 |      104      104      104      104      608 |      103 | 95b (48%)    | AXm1:8                             | 27 18 15 w=0.0G            | — | 1.00 0.0
+P1 ip.tos                           14243 1 |     2304     2304     2632     3000     3160 |     2399 | 0            | ·                                  | 17313 68 174 w=0.7G        | 2990 cuadrático | 0.98 0.3
+P1 ip.len                           14243 2 |    54432    66328    88568   105056    54440 |    66776 | 0            | · ·                                | 4934 337 770 w=0.0G        | 82494 lineal | 0.65 6.0
+P1 ip.id                            14243 2 |   183448   153944   137504   169440   183456 |   153504 | 0            | · ·                                | 4625 796 494 w=0.0G        | 174102 lineal | 0.69 9.3
+P1 ip.flags_frag                    14243 2 |     7768     6072     7408     8168     9160 |     6176 | fórmula sin ahorro | AXm1:8 ·                           | 11227 177 883 w=0.0G       | 18662 lineal | 0.94 0.7
+P1 ip.ttl                           14243 1 |    25376    25376    32584    41192    25384 |    25471 | 0            | ·                                  | 2032 155 251 w=0.0G        | 36070 lineal | 0.72 3.6
+P1 ip.proto                         14243 1 |     3360     3360     3840     4280     4320 |     3455 | 0            | ·                                  | 13494 107 500 w=0.0G       | 3614 lineal | 0.98 0.3
+P1 ip.cksum                         14243 2 |   195128   176008   169216   191336   195136 |   176312 | 0            | · ·                                | 4514 640 347 w=0.0G        | 194566 lineal | 0.39 11.3
+P1 ip.src                           14243 4 |    42000   117376   153328   190656    42008 |   120236 | 0            | · · · ·                            | 9109 825 3100 w=0.0G       | 315240 lineal | 0.71 5.1
+P1 ip.dst                           14243 4 |    45192   124168   162480   199200    45200 |   127740 | 0            | · · · ·                            | 10494 746 1796 w=0.0G      | 304632 lineal | 0.70 5.4
+P1 tcp.sport                        13708 2 |    49288    69560    88472   109984    49296 |    68856 | 0            | · ·                                | 4182 384 353 w=0.0G        | 128998 lineal | 0.68 6.8
+P1 tcp.dport                        13708 2 |    46872    66712    87152   110872    46880 |    67104 | 0            | · ·                                | 4030 303 839 w=0.0G        | 127302 lineal | 0.69 6.6
+P1 tcp.seq                          13708 4 |   225496   310536   291008   339736   225504 |   309316 | 0            | · · · ·                            | 8238 938 266 w=0.0G        | 390104 lineal | 0.65 10.7
+P1 tcp.ack                          13708 4 |   175240   270616   279408   332176   175248 |   270660 | 0            | · · · ·                            | 11564 901 1332 w=0.0G      | 394816 lineal | 0.66 10.1
+P1 tcp.off_flags                    13708 2 |    21720    26080    39640    45928    30088 |    26328 | 0            | · ·                                | 4946 299 1014 w=0.0G       | 48190 lineal | 0.78 2.4
+P1 tcp.win                          13708 2 |    58456    81304   100048   123768    58464 |    82608 | 0            | · ·                                | 4683 346 463 w=0.0G        | 153478 lineal | 0.67 6.8
+P1 tcp.cksum                        13708 2 |   219208   219360   208120   211256   219216 |   219488 | 0            | · ·                                | 4563 529 198 w=0.0G        | 221334 cuadrático | 0.49 13.2
+P1 tcp.urg                          13708 1 |      104      104      104      104      608 |      103 | 95b (48%)    | AXm1:8                             | 21 9 9 w=0.0G              | — | 1.00 0.0
+
+— controles: filas barajadas (misma distribución, sin orden) —
+  P1 ip.ver_ihl: ÉXITO (falso positivo)
+  P1 ip.flags_frag: fórmula sin ahorro
+  P1 tcp.urg: ÉXITO (falso positivo)
+
+=== RESUMEN por conjunto (columnas reales; S sintéticas aparte) ===
+P1 smallFlows      columnas 32 (cortas 7, descartadas-CSV 0) evaluadas 25 | éxitos 2 | fórmula sin ahorro 1 | sobreajuste (aceptado-no-exacto) 1 planos | ahorro neto 190 bits de 1614084 (0.01%) | cobertura (bytes con éxito / bytes de columnas) 3.3% | / bytes de archivo 0.30%
+TOTAL reales: ahorro neto 190 bits de 1614084 (0.012%); bytes con éxito 27951 de 859054
+
+Columnas reales: éxitos 2/25; fórmula sin ahorro 1; con algún plano aceptado-no-exacto 1
+Controles barajados (reales): éxitos (falsos positivos) 2/25; fórmula sin ahorro 1; aceptados-no-exactos 0
+Trabajo determinista del sintetizador (reales): 17.5 G unidades
+Tiempo total: sintetizador 245579 ms | brotli(4 baselines) 12459 ms | Algex 20256 ms | razón sint/brotli 20×
+Predictor+residual (análisis) en 23 columnas sin éxito del sintetizador: gana al baseline en 0; razón mediana vs min(B2,B3) = 1.341

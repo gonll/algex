@@ -1,0 +1,24 @@
+
+=== B11 ===
+#1 s=5 tz(a)=0 tz(a)-s=-5 EXACTO        costo=65562 ruta=il2>(periodic|periodic) il2(tabla(4096)|tabla(4096))
+#2 s=0 tz(a)=4 tz(a)-s=4 EXACTO        costo=41 ruta=poly poly(4)
+#3 s=0 tz(a)=0 tz(a)-s=0 EXACTO        costo=41 ruta=poly poly(4)
+#4 s=5 tz(a)=0 tz(a)-s=-5 EXACTO        costo=24337 ruta=il2>(il2>(il2>(beatty|beatty)|il2>(beatty|beatty))|il2>(il2>(anf|anf)|periodic)) il2(il2(il2(beatty(s=2)|beatty(s=2))|il2(beatty(s=2)|beatty(s=2)))|il2(il2(anf(393)|anf(19
+#5 s=3 tz(a)=3 tz(a)-s=0 EXACTO        costo=41 ruta=poly poly(4)
+#6 s=5 tz(a)=2 tz(a)-s=-3 EXACTO        costo=724 ruta=il2>(idxq>il2>(poly|poly)|idxq>il2>(poly|poly)) il2(idx(15→10)∘il2(poly(10)|poly(10))|idx(15→10)∘il2(poly(10)|poly(10)))
+#7 s=2 tz(a)=1 tz(a)-s=-1 EXACTO        costo=91 ruta=poly poly(10)
+#8 s=4 tz(a)=0 tz(a)-s=-4 EXACTO        costo=500 ruta=il2>(il2>(il2>(beatty|beatty)|il2>(beatty|beatty))|il2>(il2>(poly|poly)|il2>(poly|poly))) il2(il2(il2(beatty(s=1)|beatty(s=1))|il2(beatty(s=1)|beatty(s=1)))|il2(il2(poly(10)|poly(1
+#9 s=4 tz(a)=1 tz(a)-s=-3 EXACTO        costo=2703 ruta=il2>(idxq>anf|idxq>il2>(poly|poly)) il2(idx(15→10)∘anf(210)|idx(15→10)∘il2(poly(10)|poly(10)))
+#10 s=6 tz(a)=1 tz(a)-s=-5 EXACTO        costo=32911 ruta=il2>(il2>(il2>(beatty|beatty)|il2>(beatty|beatty))|periodic) il2(il2(il2(beatty(s=2)|beatty(s=2))|il2(beatty(s=2)|beatty(s=2)))|tabla(4096))
+
+=== B12 ===
+#1 s=5 tz(a)=1 tz(a)-s=-4 EXACTO        costo=820 ruta=il2>(il2>(il2>(poly|poly)|il2>(poly|poly))|il2>(il2>(poly|poly)|il2>(poly|poly))) il2(il2(il2(poly(11)|poly(11))|il2(poly(11)|poly(11)))|il2(il2(poly(11)|poly(11))|il2(poly
+#2 s=5 tz(a)=3 tz(a)-s=-2 EXACTO        costo=2606 ruta=anf anf(281)
+#3 s=5 tz(a)=1 tz(a)-s=-4 EXACTO        costo=820 ruta=il2>(il2>(il2>(poly|poly)|il2>(poly|poly))|il2>(il2>(poly|poly)|il2>(poly|poly))) il2(il2(il2(poly(11)|poly(11))|il2(poly(11)|poly(11)))|il2(il2(poly(11)|poly(11))|il2(poly
+#4 s=10 tz(a)=2 tz(a)-s=-8 FALLO         costo=- ruta=- 
+#5 s=0 tz(a)=2 tz(a)-s=2 EXACTO        costo=33 ruta=poly poly(3)
+#6 s=2 tz(a)=0 tz(a)-s=-2 EXACTO        costo=1911 ruta=idxq>anf idx(9→8)∘anf(218)
+#7 s=11 tz(a)=0 tz(a)-s=-11 FALLO         costo=- ruta=- 
+#8 s=10 tz(a)=0 tz(a)-s=-10 FALLO         costo=- ruta=- 
+#9 s=6 tz(a)=1 tz(a)-s=-5 EXACTO        costo=27423 ruta=il2>(il2>(il2>(anf|anf)|il2>(anf|anf))|il2>(il2>(anf|anf)|il2>(periodic|anf))) il2(il2(il2(anf(219)|anf(263))|il2(anf(250)|anf(247)))|il2(il2(anf(281)|anf(265))|il2(tabl
+#10 s=3 tz(a)=1 tz(a)-s=-2 EXACTO        costo=4367 ruta=idxq>adelta>il2>(literal|poly) idx(16→10)∘prefix-add∘il2(tabla(512)|poly(7))

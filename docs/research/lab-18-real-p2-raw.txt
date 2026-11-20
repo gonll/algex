@@ -1,0 +1,50 @@
+Exp. 13 datos reales. hashes compose=c1898eee decimate=309e43af realfit=bb38a010 columns=55cf2973 encoder=d5bb5aa2
+
+# P2 bigFlows(24MB): 58415 paquetes, 32 columnas
+
+29 columnas a evaluar (n ≥ 2048).
+
+dataset / columna                       n w |       B0       B1       B2       B3    Algex | S(sint) | ahorro | planos (A=acept, X=exacto, m) | ms-sint ms-brotli ms-Algex | pred+resid | monot. Hδ
+P2 rec.ts_sec                       58415 1 |      768      768     1120     1128     4184 |      867 | 0            | ·                                  | 602887 111 3772 w=0.0G     | 1570 lineal | 1.00 0.0
+P2 rec.ts_usec                      58415 3 |   836944   715992   544728   698616   836952 |   702191 | 0            | · · ·                              | 8293 3230 1676 w=0.0G      | 715620 lineal | 1.00 8.9
+P2 rec.caplen                       58415 2 |   276824   305328   426552   512072   276832 |   303764 | 0            | · ·                                | 4326 1175 917 w=0.0G       | 386354 lineal | 0.66 6.5
+P2 rec.origlen                      58415 2 |   276824   305328   426552   512072   276832 |   303764 | 0            | · ·                                | 5174 2155 1232 w=0.0G      | 386354 lineal | 0.66 6.5
+P2 eth.dst                          58415 6 |   254072   888600  1146184  1415224   254080 |   853842 | 0            | · · · · · ·                        | 12972 3252 11220 w=0.0G    | 1791324 lineal | 0.67 5.8
+P2 eth.src                          58415 6 |   289992   920592  1213552  1487032   290000 |   875474 | 0            | · · · · · ·                        | 14008 4154 5923 w=0.0G     | 1783420 lineal | 0.67 6.5
+P2 eth.type                         58415 2 |     2096     2952     3360     3552     3472 |     3332 | 0            | · ·                                | 13182 172 283 w=2.0G       | 3458 lineal | 1.00 0.0
+P2 ip.ver_ihl                       58357 1 |      936      936     1080     1136     1600 |     1035 | 0            | ·                                  | 17671 37 68 w=4.0G         | 1170 lineal | 1.00 0.0
+P2 ip.tos                           58357 1 |    80800    80800    80144    82688    68480 |    80899 | 0            | ·                                  | 2203 699 269 w=0.0G        | 78730 cuadrático | 0.81 1.5
+P2 ip.len                           58357 2 |   276168   311824   430280   516208   276176 |   309372 | 0            | · ·                                | 4079 1144 753 w=0.0G       | 391370 lineal | 0.65 6.6
+P2 ip.id                            58357 2 |   763352   746312   761920   866072   763360 |   743140 | 0            | · ·                                | 4417 2746 1276 w=0.0G      | 803578 lineal | 0.64 11.7
+P2 ip.flags_frag                    58357 2 |    51032    45976    50504    53768    54720 |    45932 | 142b (0%)    | AXm1:8 ·                           | 2824 796 1263 w=0.0G       | — | 0.89 1.0
+P2 ip.ttl                           58357 1 |   184072   184072   242152   309296   184080 |   184171 | 0            | ·                                  | 2174 893 289 w=0.0G        | 223586 lineal | 0.63 5.0
+P2 ip.proto                         58357 1 |    60616    60616    63640    67264    57544 |    60715 | 0            | ·                                  | 2050 634 631 w=0.0G        | 61138 lineal | 0.87 1.2
+P2 ip.cksum                         58357 2 |   893928   832504   819344   891624   893936 |   831868 | 0            | · ·                                | 4228 2333 999 w=0.0G       | 867490 lineal | 0.49 12.7
+P2 ip.src                           58357 4 |   387616   744064   981128  1158608   387624 |   733040 | 0            | · · · ·                            | 9422 2514 9108 w=0.0G      | 1171668 lineal | 0.65 9.0
+P2 ip.dst                           58357 4 |   365904   765240  1017288  1193344   365912 |   751288 | 0            | · · · ·                            | 9994 3102 13231 w=0.0G     | 1177388 lineal | 0.66 8.9
+P2 udp.sport                        12425 2 |    45400    72568    98408   125360    45408 |    74568 | 0            | · ·                                | 3888 215 77 w=0.0G         | 141414 lineal | 0.63 6.2
+P2 udp.dport                        12425 2 |    43880    69096    92720   117192    43888 |    70408 | 0            | · ·                                | 3950 302 142 w=0.0G        | 129974 lineal | 0.63 6.7
+P2 udp.len                          12425 2 |    46504    47552    72728    87544    54608 |    47288 | 0            | · ·                                | 3518 255 162 w=0.0G        | 65774 lineal | 0.72 5.0
+P2 udp.cksum                        12425 2 |   198568   198832   198672   198832   198576 |   198768 | 0            | · ·                                | 3931 315 132 w=0.0G        | 200910 cuadrático | 0.51 13.4
+P2 tcp.sport                        45400 2 |   271584   386456   446096   547256   271592 |   388276 | 0            | · ·                                | 5044 1369 752 w=0.0G       | 478042 lineal | 0.70 8.3
+P2 tcp.dport                        45400 2 |   224840   322552   400704   488824   224848 |   324452 | 0            | · ·                                | 5214 1362 2413 w=0.0G      | 426170 lineal | 0.72 7.0
+P2 tcp.seq                          45400 4 |   859144  1153088  1122552  1286272   859152 |  1153696 | 0            | · · · ·                            | 10712 3645 2390 w=0.0G     | 1282372 lineal | 0.67 11.5
+P2 tcp.ack                          45400 4 |   717296  1084920  1094712  1283824   717304 |  1083664 | 0            | · · · ·                            | 7973 4074 8833 w=0.0G      | 1277404 lineal | 0.67 10.8
+P2 tcp.off_flags                    45400 2 |   100392   113928   165384   188072   140520 |   113076 | 0            | · ·                                | 3875 753 1043 w=0.0G       | 184202 cuadrático | 0.76 3.0
+P2 tcp.win                          45400 2 |   261576   352024   414640   509176   261584 |   353988 | 0            | · ·                                | 3969 1091 557 w=0.0G       | 414522 lineal | 0.70 7.9
+P2 tcp.cksum                        45400 2 |   649464   704632   671184   713824   649472 |   704068 | 0            | · ·                                | 4670 1972 595 w=0.0G       | 706714 lineal | 0.53 13.3
+P2 tcp.urg                          45400 1 |      104      104      104      104      816 |      107 | 95b (47%)    | AXm1:8                             | 52 27 17 w=0.0G            | — | 1.00 0.0
+
+— controles: filas barajadas (misma distribución, sin orden) —
+  P2 ip.flags_frag: fórmula sin ahorro
+  P2 tcp.urg: ÉXITO (falso positivo)
+
+=== RESUMEN por conjunto (columnas reales; S sintéticas aparte) ===
+P2 bigFlows(24MB)  columnas 32 (cortas 3, descartadas-CSV 0) evaluadas 29 | éxitos 2 | fórmula sin ahorro 0 | sobreajuste (aceptado-no-exacto) 0 planos | ahorro neto 3507 bits de 8019248 (0.04%) | cobertura (bytes con éxito / bytes de columnas) 4.7% | / bytes de archivo 0.68%
+TOTAL reales: ahorro neto 3507 bits de 8019248 (0.044%); bytes con éxito 162114 de 3414270
+
+Columnas reales: éxitos 2/29; fórmula sin ahorro 0; con algún plano aceptado-no-exacto 0
+Controles barajados (reales): éxitos (falsos positivos) 1/29; fórmula sin ahorro 1; aceptados-no-exactos 0
+Trabajo determinista del sintetizador (reales): 6.0 G unidades
+Tiempo total: sintetizador 776700 ms | brotli(4 baselines) 44527 ms | Algex 70023 ms | razón sint/brotli 17×
+Predictor+residual (análisis) en 27 columnas sin éxito del sintetizador: gana al baseline en 0; razón mediana vs min(B2,B3) = 1.064

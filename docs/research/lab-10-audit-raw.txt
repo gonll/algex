@@ -1,0 +1,13 @@
+N=65536, 8 instancias/familia. Cada celda = fracción de instancias donde la sonda se cumple (o mediana).
+
+fam | solver congelado resuelve | período 2^m (mediana) | Δ^k=0 (k≤12) | incrementos≤2 | afín GF(2) | ANF ≤400 mon. | dim simetrías XOR (mediana) | niveles de dependencia por plano (mediana)
+A   | 8/8 | 0 | 2/8 | 8/8 | 0/8 | 2/8 | 3 | 78888888   (afín desplazada: ((a·n+b) mod 2^32 >> s) & 255)
+B   | 8/8 | 256 | 8/8 | 0/8 | 0/8 | 8/8 | 8 | 12345678   (polinomio grado 2–3 mod 2^32, byte bajo)
+C   | 8/8 | 1024 | 0/8 | 0/8 | 8/8 | 8/8 | 8 | 56667778   (mezcla lineal GF(2) (xorshift) de n, byte bajo)
+D   | 8/8 | 0 | 0/8 | 0/8 | 0/8 | 8/8 | 0 | 87567686   (booleana cuadrática sobre los 16 bits de n)
+E   | 8/8 | 2048 | 0/8 | 0/8 | 0/8 | 8/8 | 6 | 55677678   (XOR acumulado (prefijo) de una mezcla lineal)
+G   | 8/8 | 0 | 0/8 | 0/8 | 0/8 | 8/8 | 1 | 56786788   (entrelazado: pares = polinomio, impares = xorshift)
+X1  | 0/8 | 128 | 0/8 | 0/8 | 0/8 | 8/8 | 9 | 44555677   (xorshift de bytes aplicado a un polinomio)
+X2  | 0/8 | 256 | 0/8 | 0/8 | 0/8 | 3/8 | 8 | 04678888   (polinomio evaluado sobre un xorshift de n)
+H   | 0/8 | 0 | 0/8 | 0/8 | 0/8 | 0/8 | 0 | 88888888   (hash fmix32(n), byte bajo)
+R   | 0/8 | 0 | 0/8 | 0/8 | 0/8 | 0/8 | 0 | 88888888   (bytes aleatorios)

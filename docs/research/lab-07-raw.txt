@@ -1,0 +1,16 @@
+grupo            | objetivo                                            | f(n) hallada                      | bits f(n) | BM bit L / bits  | brotli (bits) | nodos   | ms
+en familia       | (7n+3) mod 256                                      | (3 + (n * 7))                     |        32 | —                |          1984 |  444353 | 3549
+en familia       | n*n mod 256                                         | (n * n)                           |        12 | —                |          1160 |     237 | 45
+en familia       | n xor (n>>3)                                        | (n ^ (n >> 3))                    |        21 | —                |          7632 |    9232 | 147
+en familia       | (n*n) mod 251                                       | ((n * n) % 251)                   |        31 | —                |          2184 |  444353 | 3291
+en familia       | (13n) xor (n>>2)                                    | — no encontrada —                 |         — | —                |          7832 |         | 3302
+en familia       | Thue–Morse  popcount(n)&1 [bits]                    | pc(n)                             |         8 | no (L>2048)      |           544 |      11 | 9
+en familia       | Rudin–Shapiro pc(n & n>>1)&1 [bits]                 | pc((n & (n << 1)))                |        23 | no (L>2048)      |           936 |   23030 | 148
+en familia       | bit 3 de n*n [bits]                                 | ((n * n) >> 3)                    |        21 | L=6 / 50         |           104 |    9232 | 101
+fuera de familia | ((40503n+12345)>>8) mod 256  (2 constantes grandes) | — no encontrada —                 |         — | —                |          3616 |         | 2949
+fuera de familia | n^3 mod 997                                         | — no encontrada —                 |         — | —                |          8224 |         | 2983
+fuera de familia | Legendre mod 1009 (residuo cuadrático) [bits]       | — no encontrada —                 |         — | L=504 / 1058     |          8208 |         | 3007
+control          | bytes aleatorios                                    | — no encontrada —                 |         — | —                |         32800 |         | 3086
+control          | bits aleatorios                                     | — no encontrada —                 |         — | no (L>2048)      |         65568 |         | 2951
+control          | texto ASCII (README)                                | — no encontrada —                 |         — | —                |         12320 |         | 3172
+control          | binario real (kernel8, 4 KB)                        | — no encontrada —                 |         — | —                |         32800 |         | 3192

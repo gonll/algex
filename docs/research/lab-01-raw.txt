@@ -1,0 +1,35 @@
+grupo      | entrada                                   |     n | LFSR/GF(2)         | FCSR 2-ádico       | racional decimal   | Algex actual      | brotli11 | zstd19 | gzip9
+sintético  | PRBS7 bit-serial MSB                      | 32768 |       9    0.03% ✓ |      42    0.13% ✓ |       —        —   |      60   0.2% |      144 |    147 | 324
+   ↳ BM:L=7 MSB 76ms | FCSR:MSB 243ms  | Algex 149ms
+sintético  | PRBS15 bit-serial MSB                     | 32768 |      11    0.03% ✓ |       —        —   |       —        —   |    3545  10.8% |    32772 |  32778 | 32798
+   ↳ BM:L=15 MSB 135ms  | Algex 92ms
+sintético  | PRBS23 bit-serial MSB                     | 32768 |      13    0.04% ✓ |       —        —   |       —        —   |   16754  51.1% |    32772 |  32778 | 32798
+   ↳ BM:L=23 MSB 193ms  | Algex 121ms
+sintético  | PRBS31 bit-serial MSB                     | 32768 |      15    0.05% ✓ |       —        —   |       —        —   |   24795  75.7% |    32772 |  32778 | 32798
+   ↳ BM:L=31 MSB 301ms  | Algex 130ms
+sintético  | LFSR grado 64 aleatorio                   | 32768 |      24    0.07% ✓ |       —        —   |       —        —   |   32929 100.5% |    32772 |  32778 | 32796
+   ↳ BM:L=64 MSB 543ms  | Algex 112ms
+sintético  | PRBS31 + 0.1% bits flipados               | 32768 |       —        —   |       —        —   |       —        —   |   32819 100.2% |    32772 |  32778 | 32798
+   ↳   | Algex 210ms
+sintético  | FCSR p/q, q de 24 bits (2-ádico, LSB)     | 32768 |       —        —   |      14    0.04% ✓ |       —        —   |   32929 100.5% |    32772 |  32778 | 32798
+   ↳ FCSR:LSB 19512ms  | Algex 97ms
+sintético  | FCSR p/q, q de 64 bits (2-ádico, LSB)     | 32768 |       —        —   |      25    0.08% ✓ |       —        —   |   32929 100.5% |    32772 |  32778 | 32798
+   ↳ FCSR:LSB 19821ms  | Algex 113ms
+sintético  | FCSR p/q, q de 256 bits (2-ádico, LSB)    | 32768 |       —        —   |      74    0.23% ✓ |       —        —   |   32929 100.5% |    32772 |  32778 | 32798
+   ↳ FCSR:LSB 19861ms  | Algex 103ms
+sintético  | decimales de 1/9973 (20 KB ASCII)         | 20000 |       —        —   |     567    2.83% ✓ |       8    0.04% ✓ |     406   2.0% |      251 |    272 | 406
+   ↳ FCSR:LSB 2789ms | DEC:q=9973 13ms  | Algex 21ms
+sintético  | decimales de 355/1000003 (20 KB ASCII)    | 20000 |       —        —   |       —        —   |      11    0.06% ✓ |    8864  44.3% |     8505 |   8483 | 9624
+   ↳ DEC:q=1000003 12ms  | Algex 56ms
+sintético  | decimales de p/q con q de 120 bits (20 KB)| 20000 |       —        —   |       —        —   |      37    0.18% ✓ |    8873  44.4% |     8495 |   8556 | 9624
+   ↳ DEC:q=104351230436… 24ms  | Algex 54ms
+control    | aleatorio uniforme 32 KB                  | 32768 |       —        —   |       —        —   |       —        —   |   32929 100.5% |    32772 |  32778 | 32798
+   ↳   | Algex 105ms
+control    | dígitos decimales aleatorios 20 KB        | 20000 |       —        —   |       —        —   |       —        —   |    8620  43.1% |     8491 |   8552 | 9615
+   ↳   | Algex 52ms
+real       | texto real (README.md)                    | 32768 |       —        —   |       —        —   |       —        —   |   10941  33.4% |    10674 |  12101 | 12536
+   ↳   | Algex 219ms
+real       | binario real (gf-analyze.exe)             | 32768 |       —        —   |       —        —   |       —        —   |   19148  58.4% |    18939 |  19251 | 20655
+   ↳   | Algex 244ms
+real       | binario real (node, primeros 32 KB)       | 32768 |       —        —   |       —        —   |       —        —   |    7681  23.4% |     7410 |   7979 | 9203
+   ↳   | Algex 140ms

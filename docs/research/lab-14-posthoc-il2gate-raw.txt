@@ -1,0 +1,10 @@
+Lote C (grid) 10/clase N=65536 8000 ms maxDepth=3. hashes compose=2ce8c5ee ast=48e3ef99 probes=570dbdbf hidden-compose=750e168b
+
+clase      | desc | acept | exacta-no-acept | costo mediano (aceptadas) vs brotli | ms med | rutas
+G11 j=2    | 7/10 | 10/10 |               0 |                        144 vs 8344 |    904 | il2>(il2>(poly|poly)|il2>(poly|poly)×7 adelta>il2>(mulo>beatty|il2>(poly|po×3
+G11 j=3    | 9/10 | 10/10 |               0 |                       292 vs 16120 |   1210 | il2>(il2>(il2>(poly|poly)|mulo>beatt×2 il2>(il2>(il2>(poly|poly)|il2>(poly|×7 adelta>il2>(mulo>beatty|il2>(poly|po×1
+G12 j=2    | 10/10 | 10/10 |               0 |                        144 vs 3296 |   1609 | il2>(il2>(poly|poly)|il2>(poly|poly)×8 il2>(poly|poly)×2
+G12 j=3    | 10/10 | 10/10 |               0 |                        292 vs 3136 |    593 | il2>(il2>(il2>(poly|poly)|il2>(poly|×10
+
+Por grupo (descubiertas / aceptadas / exactas-no-aceptadas / total):
+  rejilla 2-ádica                  36 / 40 / 0 / 40

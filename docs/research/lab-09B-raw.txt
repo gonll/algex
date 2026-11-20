@@ -1,0 +1,80 @@
+Lote B: 20 instancias/familia (guiado), 5/familia (catálogo). N=65536; generalización comprobada en TODOS los índices de [N, 2^20)
+
+fam | descripción                                       | GUIADO desc/sobreaj/fallo | costo mediano (bits) vs brotli | ms/inst | CATÁLOGO desc/sobreaj/fallo | transformación·solver ganadores
+A   | afín desplazada: ((a·n+b) mod 2^32 >> s) & 255    |                    14/6/0 |                     55 vs 7576 |     130 |                       0/0/5 | id·beatty×20
+B   | polinomio grado 2–3 mod 2^32, byte bajo           |                    20/0/0 |                     37 vs 2184 |      33 |                       0/0/5 | id·poly×20
+C   | mezcla lineal GF(2) (xorshift) de n, byte bajo    |                    20/0/0 |                    145 vs 9144 |      53 |                       0/0/5 | id·gf2×20
+D   | booleana cuadrática sobre los 16 bits de n        |                    20/0/0 |                  714 vs 106776 |     103 |                       0/0/5 | id·anf×20
+E   | XOR acumulado (prefijo) de una mezcla lineal      |                    20/0/0 |                    147 vs 9936 |      65 |                       0/0/5 | xor-delta·gf2×20
+G   | entrelazado: pares = polinomio, impares = xorshift |                    17/3/0 |                  176 vs 113920 |      71 |                       0/0/5 | interleave2·poly|gf2×20
+F   | suma acumulada de una afín desplazada             |                   10/10/0 |                   65 vs 391480 |     215 |                       0/0/5 | add-delta·beatty×20
+X1  | xorshift de bytes aplicado a un polinomio         |                    0/0/20 |                              — |      32 |                       0/0/5 | 
+X2  | polinomio evaluado sobre un xorshift de n         |                    0/0/20 |                              — |      35 |                       0/0/5 | 
+H   | hash fmix32(n), byte bajo                         |                    0/0/20 |                              — |      25 |                       0/0/5 | 
+T   | LCG truncado (byte alto del estado)               |                    0/0/20 |                              — |      25 |                       0/0/5 | 
+R   | bytes aleatorios                                  |                    0/0/20 |                              — |      24 |                       0/0/5 | 
+
+Sobreajustes (detalle):
+  A#4 id·beatty primer desacuerdo n=136395 (2 de 983040) | ((1418756258*n+2086229905)>>>22)&255
+  A#5 id·beatty primer desacuerdo n=303795 (20 de 983040) | ((4181336571*n+1184196488)>>>19)&255
+  A#8 id·beatty primer desacuerdo n=146953 (5 de 983040) | ((2543006271*n+774502793)>>>24)&255
+  A#10 id·beatty primer desacuerdo n=73061 (12 de 983040) | ((1213686213*n+3062766651)>>>21)&255
+  A#11 id·beatty primer desacuerdo n=252135 (3 de 983040) | ((1947277345*n+1414816311)>>>22)&255
+  A#17 id·beatty primer desacuerdo n=346104 (3 de 983040) | ((2274437092*n+2036145937)>>>23)&255
+  G#1 interleave2·poly|gf2 primer desacuerdo n=65537 (262144 de 983040) | pares: poly deg 3 | impares: R8,K2,L5,L6
+  G#6 interleave2·poly|gf2 primer desacuerdo n=65537 (262144 de 983040) | pares: poly deg 3 | impares: R8,L7,L2,L4
+  G#15 interleave2·poly|gf2 primer desacuerdo n=65537 (262144 de 983040) | pares: poly deg 3 | impares: R8,L5
+  F#1 add-delta·beatty primer desacuerdo n=473430 (575146 de 983040) | suma acumulada de ((3761981950*n+2338952883)>>>22)&255
+  F#5 add-delta·beatty primer desacuerdo n=116909 (931667 de 983040) | suma acumulada de ((565573986*n+1561323720)>>>21)&255
+  F#8 add-delta·beatty primer desacuerdo n=411855 (636721 de 983040) | suma acumulada de ((4016947606*n+424298443)>>>22)&255
+  F#10 add-delta·beatty primer desacuerdo n=73169 (975407 de 983040) | suma acumulada de ((1203911595*n+1568402021)>>>17)&255
+  F#11 add-delta·beatty primer desacuerdo n=322165 (726411 de 983040) | suma acumulada de ((2835611362*n+2888429243)>>>23)&255
+  F#13 add-delta·beatty primer desacuerdo n=106271 (942305 de 983040) | suma acumulada de ((1490069482*n+2777109511)>>>24)&255
+  F#15 add-delta·beatty primer desacuerdo n=91338 (957238 de 983040) | suma acumulada de ((2029402058*n+4095939236)>>>24)&255
+  F#17 add-delta·beatty primer desacuerdo n=248858 (799718 de 983040) | suma acumulada de ((1325780434*n+1274003626)>>>20)&255
+  F#18 add-delta·beatty primer desacuerdo n=101066 (947510 de 983040) | suma acumulada de ((2748258284*n+1229318078)>>>22)&255
+  F#20 add-delta·beatty primer desacuerdo n=691152 (357424 de 983040) | suma acumulada de ((2205674702*n+175095457)>>>22)&255
+
+Hallazgos aceptados que NO generalizan en familias de control (falsos positivos / sobreajuste): ninguno
+
+Disparos de propiedad por grupo y transformación:solver (veces que la propiedad se cumplió / veces evaluada). En controles, un disparo es un falso disparo:
+  controles add:anf        0/100
+  controles add:beatty     0/100
+  controles add:gf2        0/100
+  controles add:poly       0/100
+  controles id:anf         29/100
+  controles id:beatty      0/100
+  controles id:gf2         0/100
+  controles id:poly        0/100
+  controles il0:anf        36/100
+  controles il0:beatty     0/100
+  controles il0:gf2        0/100
+  controles il0:poly       0/100
+  controles il1:anf        35/100
+  controles il1:beatty     0/100
+  controles il1:gf2        0/100
+  controles il1:poly       0/100
+  controles xor:anf        0/100
+  controles xor:beatty     0/100
+  controles xor:gf2        0/100
+  controles xor:poly       0/100
+  diseñadas add:anf        11/140
+  diseñadas add:beatty     20/140
+  diseñadas add:gf2        0/140
+  diseñadas add:poly       0/140
+  diseñadas id:anf         101/140
+  diseñadas id:beatty      20/140
+  diseñadas id:gf2         20/140
+  diseñadas id:poly        21/140
+  diseñadas il0:anf        101/140
+  diseñadas il0:beatty     20/140
+  diseñadas il0:gf2        40/140
+  diseñadas il0:poly       41/140
+  diseñadas il1:anf        101/140
+  diseñadas il1:beatty     20/140
+  diseñadas il1:gf2        60/140
+  diseñadas il1:poly       41/140
+  diseñadas xor:anf        20/140
+  diseñadas xor:beatty     0/140
+  diseñadas xor:gf2        20/140
+  diseñadas xor:poly       0/140

@@ -1,0 +1,11 @@
+inst | s  v2(a)  j | resultado | ruta
+#1   | s= 0 v2=2 j=-2 | DESCUBIERTA        | baff>poly
+#2   | s= 1 v2=0 j= 1 | DESCUBIERTA        | il2>(baff>poly|baff>poly)
+#3   | s=11 v2=0 j=11 | FALLO              | -
+#4   | s= 9 v2=2 j= 7 | exacta-no-aceptada | il2>(il2>(il2>(periodic|periodic)|il2>(periodic|periodic))|il2>(il2>(p
+#5   | s= 2 v2=0 j= 2 | DESCUBIERTA        | il2>(il2>(baff>poly|baff>poly)|il2>(baff>poly|baff>poly))
+#6   | s= 8 v2=0 j= 8 | FALLO              | -
+#7   | s= 1 v2=2 j=-1 | exacta-no-aceptada | periodic
+#8   | s= 2 v2=0 j= 2 | DESCUBIERTA        | il2>(il2>(baff>poly|baff>poly)|il2>(baff>poly|baff>poly))
+#9   | s= 1 v2=1 j= 0 | DESCUBIERTA        | baff>poly
+#10  | s= 1 v2=1 j= 0 | exacta-no-aceptada | periodic

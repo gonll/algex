@@ -1,0 +1,2 @@
+prefijo 2999466 B; salida 1382337 B; 42 flujos; suma de flujos 1382243 B; sobrecarga del contenedor (cabecera + longitudes) 94 B = 0.0068 %
+determinismo: dos codificaciones idénticas = true (1c7d2bfae265c8df); reconstrucción exacta = true

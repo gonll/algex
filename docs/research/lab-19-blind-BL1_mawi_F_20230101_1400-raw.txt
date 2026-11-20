@@ -1,0 +1,25 @@
+Exp. 14 BLIND BL1_mawi_F_20230101_1400: test/real-data/pcap-blind/BL1_mawi_F_20230101_1400.pcap (23999980 bytes, sha256 493c816485e4). pcapcodec=599fe553 encoder=fa624381
+
+análisis: 296553 paquetes, IPv4 0, IPv6 0, TCP 0, UDP 0, crudos 296553 (100.0 %), enlace 1, tiempo de análisis 78 ms; carga útil 0 B, rawpk 15103366 B, opts 0 B (0.0 % del archivo es carga útil)
+
+brazo                              bytes | vs W0 | exacto | enc ms | dec ms | selec ms
+W0 brotli-11 (lgwin 24)           4620741 |  —    |   —    |  41737 |     57 |
+W1 Algex max (archivo)            4667706 | 1.02% |  —    | 116372 |   —    | 
+W2 col                            4510394 |  -2.39% |   sí   |  39861 |    231 |  39782 
+W3 col+gen                        4446157 |  -3.78% |   sí   |  39847 |    228 |  39770 
+W4 ctx                            4441340 |  -3.88% |   sí   |  40359 |    228 |  40293 (tiempo combinado)
+W5 ctx+ck                         4441340 |  -3.88% |   sí   |  40446 |    232 |  40366 (tiempo combinado)
+
+Atribución del ahorro (bytes y % de W0):
+  conocer la disposición (W0→W2)                     110347 B  2.39 %
+  predicción genérica sin protocolo (W2→W3)           64237 B  1.39 %
+  estado/semántica TCP-IP (W3→W4)                      4817 B  0.10 %
+  álgebra de checksums (W4→W5)                            0 B  0.00 %
+
+MEJORA NETA NI = 1 − W5 / min(W0,W1) = 3.88 %   (W5 4441340 B vs min(W0,W1) 4620741 B)
+
+Flujos más grandes por brazo (bytes):
+  W2 col       rawpk=3957783  rec.ts_frac=224887  rec.orig=175559  rec.incl=77653  eth.src=37123  eth.dst=37117  rec.ts_sec=41  eth.type=18
+  W3 col+gen   rawpk=3957783  rec.orig=175559  rec.ts_frac=160634  rec.incl=77653  eth.src=37123  eth.dst=37117  rec.ts_sec=57  eth.type=18
+  W4 ctx       rawpk=3957783  rec.orig=170380  time=161054  rec.incl=77653  eth.src=37123  eth.dst=37117  eth.type=18  ip6.src=16
+  W5 ctx+ck    rawpk=3957783  rec.orig=170380  time=161054  rec.incl=77653  eth.src=37123  eth.dst=37117  eth.type=18  ip6.src=16

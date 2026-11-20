@@ -1,0 +1,140 @@
+Lote B: 20 instancias/familia (guiado), 0/familia (catálogo). N=4096; generalización comprobada en TODOS los índices de [N, 2^20)
+
+fam | descripción                                       | GUIADO desc/sobreaj/fallo | costo mediano (bits) vs brotli | ms/inst | CATÁLOGO desc/sobreaj/fallo | transformación·solver ganadores
+A   | afín desplazada: ((a·n+b) mod 2^32 >> s) & 255    |                    8/12/0 |                     55 vs 4336 |      12 |              (no ejecutado) | id·beatty×20
+B   | polinomio grado 2–3 mod 2^32, byte bajo           |                    20/0/0 |                     37 vs 2184 |       4 |              (no ejecutado) | id·poly×20
+C   | mezcla lineal GF(2) (xorshift) de n, byte bajo    |                    12/8/0 |                    111 vs 7648 |       6 |              (no ejecutado) | id·gf2×20
+D   | booleana cuadrática sobre los 16 bits de n        |                    0/20/0 |                   372 vs 12736 |       7 |              (no ejecutado) | id·anf×20
+E   | XOR acumulado (prefijo) de una mezcla lineal      |                    7/13/0 |                    113 vs 5016 |       8 |              (no ejecutado) | xor-delta·gf2×20
+G   | entrelazado: pares = polinomio, impares = xorshift |                    9/11/0 |                   142 vs 29680 |      10 |              (no ejecutado) | interleave2·poly|gf2×20
+F   | suma acumulada de una afín desplazada             |                    5/15/0 |                    59 vs 30408 |      10 |              (no ejecutado) | add-delta·beatty×20
+X1  | xorshift de bytes aplicado a un polinomio         |                    0/0/20 |                              — |       3 |              (no ejecutado) | 
+X2  | polinomio evaluado sobre un xorshift de n         |                    0/0/20 |                              — |       6 |              (no ejecutado) | 
+H   | hash fmix32(n), byte bajo                         |                    0/0/20 |                              — |       8 |              (no ejecutado) | 
+T   | LCG truncado (byte alto del estado)               |                    0/0/20 |                              — |       7 |              (no ejecutado) | 
+R   | bytes aleatorios                                  |                    0/0/20 |                              — |       7 |              (no ejecutado) | 
+
+Sobreajustes (detalle):
+  A#1 id·beatty primer desacuerdo n=8993 (96 de 1044480) | ((908382832*n+828608411)>>>19)&255
+  A#2 id·beatty primer desacuerdo n=11625 (312 de 1044480) | ((4041426620*n+1568731211)>>>19)&255
+  A#4 id·beatty primer desacuerdo n=4885 (261246 de 1044480) | ((1418756258*n+2086229905)>>>22)&255
+  A#5 id·beatty primer desacuerdo n=271641 (24 de 1044480) | ((4181336571*n+1184196488)>>>19)&255
+  A#8 id·beatty primer desacuerdo n=9553 (32700 de 1044480) | ((2543006271*n+774502793)>>>24)&255
+  A#10 id·beatty primer desacuerdo n=4320 (261292 de 1044480) | ((1213686213*n+3062766651)>>>21)&255
+  A#11 id·beatty primer desacuerdo n=4675 (130491 de 1044480) | ((1947277345*n+1414816311)>>>22)&255
+  A#15 id·beatty primer desacuerdo n=5917 (576 de 1044480) | ((549049059*n+1931753289)>>>15)&255
+  A#16 id·beatty primer desacuerdo n=33821 (64 de 1044480) | ((1391013380*n+2674899354)>>>18)&255
+  A#17 id·beatty primer desacuerdo n=12738 (83 de 1044480) | ((2274437092*n+2036145937)>>>23)&255
+  A#19 id·beatty primer desacuerdo n=10933 (128 de 1044480) | ((1304554685*n+1755208800)>>>14)&255
+  A#20 id·beatty primer desacuerdo n=5250 (326042 de 1044480) | ((4217147798*n+295567357)>>>24)&255
+  C#1 id·gf2 primer desacuerdo n=4096 (524288 de 1044480) | K54,L5,R5,L1
+  C#2 id·gf2 primer desacuerdo n=4096 (524288 de 1044480) | R5,K32,L1,L2
+  C#3 id·gf2 primer desacuerdo n=4096 (983040 de 1044480) | K13,K110,R8
+  C#8 id·gf2 primer desacuerdo n=4096 (983040 de 1044480) | L5,L4,R8,K121
+  C#9 id·gf2 primer desacuerdo n=4096 (983040 de 1044480) | R8,L2,K116,L1
+  C#12 id·gf2 primer desacuerdo n=4096 (917504 de 1044480) | R7,L6
+  C#16 id·gf2 primer desacuerdo n=4096 (917504 de 1044480) | L2,R7,L1
+  C#17 id·gf2 primer desacuerdo n=4096 (917504 de 1044480) | R7,L6
+  D#1 id·anf primer desacuerdo n=4096 (942080 de 1044480) | ANF cuadrática 16 bits
+  D#2 id·anf primer desacuerdo n=4096 (983040 de 1044480) | ANF cuadrática 16 bits
+  D#3 id·anf primer desacuerdo n=4096 (974848 de 1044480) | ANF cuadrática 16 bits
+  D#4 id·anf primer desacuerdo n=4097 (970752 de 1044480) | ANF cuadrática 16 bits
+  D#5 id·anf primer desacuerdo n=4096 (917504 de 1044480) | ANF cuadrática 16 bits
+  D#6 id·anf primer desacuerdo n=4096 (978944 de 1044480) | ANF cuadrática 16 bits
+  D#7 id·anf primer desacuerdo n=4096 (947200 de 1044480) | ANF cuadrática 16 bits
+  D#8 id·anf primer desacuerdo n=4096 (950272 de 1044480) | ANF cuadrática 16 bits
+  D#9 id·anf primer desacuerdo n=4096 (948224 de 1044480) | ANF cuadrática 16 bits
+  D#10 id·anf primer desacuerdo n=4096 (983040 de 1044480) | ANF cuadrática 16 bits
+  D#11 id·anf primer desacuerdo n=4096 (958464 de 1044480) | ANF cuadrática 16 bits
+  D#12 id·anf primer desacuerdo n=4096 (983040 de 1044480) | ANF cuadrática 16 bits
+  D#13 id·anf primer desacuerdo n=4096 (888832 de 1044480) | ANF cuadrática 16 bits
+  D#14 id·anf primer desacuerdo n=4096 (909312 de 1044480) | ANF cuadrática 16 bits
+  D#15 id·anf primer desacuerdo n=4096 (958464 de 1044480) | ANF cuadrática 16 bits
+  D#16 id·anf primer desacuerdo n=4096 (931840 de 1044480) | ANF cuadrática 16 bits
+  D#17 id·anf primer desacuerdo n=4096 (983040 de 1044480) | ANF cuadrática 16 bits
+  D#18 id·anf primer desacuerdo n=4096 (966656 de 1044480) | ANF cuadrática 16 bits
+  D#19 id·anf primer desacuerdo n=4096 (937984 de 1044480) | ANF cuadrática 16 bits
+  D#20 id·anf primer desacuerdo n=4096 (958464 de 1044480) | ANF cuadrática 16 bits
+  E#1 xor-delta·gf2 primer desacuerdo n=4096 (262144 de 1044480) | prefijo-XOR de L1,R5
+  E#6 xor-delta·gf2 primer desacuerdo n=4096 (458752 de 1044480) | prefijo-XOR de L5,L1,R7
+  E#7 xor-delta·gf2 primer desacuerdo n=4096 (393216 de 1044480) | prefijo-XOR de R6,L1
+  E#9 xor-delta·gf2 primer desacuerdo n=4096 (393216 de 1044480) | prefijo-XOR de R6,L4,L2
+  E#10 xor-delta·gf2 primer desacuerdo n=4096 (262144 de 1044480) | prefijo-XOR de K134,R5,L3
+  E#11 xor-delta·gf2 primer desacuerdo n=4096 (458752 de 1044480) | prefijo-XOR de L6,R7
+  E#12 xor-delta·gf2 primer desacuerdo n=4096 (262144 de 1044480) | prefijo-XOR de R5,K105
+  E#13 xor-delta·gf2 primer desacuerdo n=4096 (262144 de 1044480) | prefijo-XOR de R5,L3,K221
+  E#14 xor-delta·gf2 primer desacuerdo n=4096 (491520 de 1044480) | prefijo-XOR de L1,R8,L7
+  E#15 xor-delta·gf2 primer desacuerdo n=4096 (458752 de 1044480) | prefijo-XOR de L7,L3,L4,R7
+  E#18 xor-delta·gf2 primer desacuerdo n=4096 (458752 de 1044480) | prefijo-XOR de L2,R7,L5
+  E#19 xor-delta·gf2 primer desacuerdo n=4096 (262144 de 1044480) | prefijo-XOR de R5,K70,L2
+  E#20 xor-delta·gf2 primer desacuerdo n=4096 (262144 de 1044480) | prefijo-XOR de R5,L3
+  G#1 interleave2·poly|gf2 primer desacuerdo n=4097 (507904 de 1044480) | pares: poly deg 3 | impares: R8,K2,L5,L6
+  G#4 interleave2·poly|gf2 primer desacuerdo n=4097 (393216 de 1044480) | pares: poly deg 3 | impares: L3,K177,R5
+  G#5 interleave2·poly|gf2 primer desacuerdo n=4097 (491520 de 1044480) | pares: poly deg 2 | impares: L4,R7,L2,K26
+  G#6 interleave2·poly|gf2 primer desacuerdo n=4097 (507904 de 1044480) | pares: poly deg 3 | impares: R8,L7,L2,L4
+  G#11 interleave2·poly|gf2 primer desacuerdo n=4097 (458752 de 1044480) | pares: poly deg 2 | impares: R6,L6
+  G#13 interleave2·poly|gf2 primer desacuerdo n=4097 (262144 de 1044480) | pares: poly deg 3 | impares: R4,L6
+  G#15 interleave2·poly|gf2 primer desacuerdo n=4097 (507904 de 1044480) | pares: poly deg 3 | impares: R8,L5
+  G#16 interleave2·poly|gf2 primer desacuerdo n=4097 (393216 de 1044480) | pares: poly deg 2 | impares: L4,L7,K137,R5
+  G#17 interleave2·poly|gf2 primer desacuerdo n=4097 (458752 de 1044480) | pares: poly deg 3 | impares: K234,K226,R6,L5
+  G#18 interleave2·poly|gf2 primer desacuerdo n=4097 (491520 de 1044480) | pares: poly deg 3 | impares: R7,K221
+  G#19 interleave2·poly|gf2 primer desacuerdo n=4097 (393216 de 1044480) | pares: poly deg 3 | impares: L4,R5
+  F#1 add-delta·beatty primer desacuerdo n=6720 (1037775 de 1044480) | suma acumulada de ((3761981950*n+2338952883)>>>22)&255
+  F#3 add-delta·beatty primer desacuerdo n=54355 (994221 de 1044480) | suma acumulada de ((3408071100*n+1638148104)>>>18)&255
+  F#5 add-delta·beatty primer desacuerdo n=11061 (1037515 de 1044480) | suma acumulada de ((565573986*n+1561323720)>>>21)&255
+  F#7 add-delta·beatty primer desacuerdo n=18492 (1030084 de 1044480) | suma acumulada de ((3049121084*n+1931175415)>>>17)&255
+  F#8 add-delta·beatty primer desacuerdo n=5645 (1042931 de 1044480) | suma acumulada de ((4016947606*n+424298443)>>>22)&255
+  F#9 add-delta·beatty primer desacuerdo n=13440 (1035136 de 1044480) | suma acumulada de ((2733100398*n+677769471)>>>15)&255
+  F#10 add-delta·beatty primer desacuerdo n=6067 (1042509 de 1044480) | suma acumulada de ((1203911595*n+1568402021)>>>17)&255
+  F#11 add-delta·beatty primer desacuerdo n=5019 (1039398 de 1044480) | suma acumulada de ((2835611362*n+2888429243)>>>23)&255
+  F#12 add-delta·beatty primer desacuerdo n=6404 (1037748 de 1044480) | suma acumulada de ((1763164159*n+3256948977)>>>21)&255
+  F#13 add-delta·beatty primer desacuerdo n=7746 (1037167 de 1044480) | suma acumulada de ((1490069482*n+2777109511)>>>24)&255
+  F#14 add-delta·beatty primer desacuerdo n=10884 (1037692 de 1044480) | suma acumulada de ((3225219184*n+1647420995)>>>18)&255
+  F#15 add-delta·beatty primer desacuerdo n=8980 (1035748 de 1044480) | suma acumulada de ((2029402058*n+4095939236)>>>24)&255
+  F#17 add-delta·beatty primer desacuerdo n=18528 (1030048 de 1044480) | suma acumulada de ((1325780434*n+1274003626)>>>20)&255
+  F#18 add-delta·beatty primer desacuerdo n=15379 (1033197 de 1044480) | suma acumulada de ((2748258284*n+1229318078)>>>22)&255
+  F#20 add-delta·beatty primer desacuerdo n=46728 (1001848 de 1044480) | suma acumulada de ((2205674702*n+175095457)>>>22)&255
+
+Hallazgos aceptados que NO generalizan en familias de control (falsos positivos / sobreajuste): ninguno
+
+Disparos de propiedad por grupo y transformación:solver (veces que la propiedad se cumplió / veces evaluada). En controles, un disparo es un falso disparo:
+  controles add:anf        0/100
+  controles add:beatty     0/100
+  controles add:gf2        0/100
+  controles add:poly       0/100
+  controles id:anf         30/100
+  controles id:beatty      0/100
+  controles id:gf2         0/100
+  controles id:poly        0/100
+  controles il0:anf        36/100
+  controles il0:beatty     0/100
+  controles il0:gf2        0/100
+  controles il0:poly       0/100
+  controles il1:anf        35/100
+  controles il1:beatty     0/100
+  controles il1:gf2        0/100
+  controles il1:poly       0/100
+  controles xor:anf        0/100
+  controles xor:beatty     0/100
+  controles xor:gf2        0/100
+  controles xor:poly       0/100
+  diseñadas add:anf        11/140
+  diseñadas add:beatty     20/140
+  diseñadas add:gf2        0/140
+  diseñadas add:poly       0/140
+  diseñadas id:anf         101/140
+  diseñadas id:beatty      20/140
+  diseñadas id:gf2         20/140
+  diseñadas id:poly        21/140
+  diseñadas il0:anf        101/140
+  diseñadas il0:beatty     20/140
+  diseñadas il0:gf2        40/140
+  diseñadas il0:poly       41/140
+  diseñadas il1:anf        101/140
+  diseñadas il1:beatty     20/140
+  diseñadas il1:gf2        60/140
+  diseñadas il1:poly       41/140
+  diseñadas xor:anf        20/140
+  diseñadas xor:beatty     0/140
+  diseñadas xor:gf2        20/140
+  diseñadas xor:poly       0/140

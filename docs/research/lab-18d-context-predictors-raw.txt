@@ -1,0 +1,12 @@
+
+== P1 smallFlows: 14243 paquetes IPv4, 13708 TCP
+columna                                   n  | min(B0..B3) | pred+resid | ahorro
+ip.id (origen: último+1)              14243       | 137598      | 71710 | 47.9%  (residuos 0: 65.1%)
+tcp.seq (flujo: último seq+carga)     13708       | 225592      | 56992 | 74.7%  (residuos 0: 90.8%)
+tcp.ack (flujo: último ack)           13708       | 175336     | 103472 | 41.0%  (residuos 0: 57.0%)
+
+== P2 bigFlows(24MB): 58357 paquetes IPv4, 45400 TCP
+columna                                   n  | min(B0..B3) | pred+resid | ahorro
+ip.id (origen: último+1)              58357       | 746410     | 303010 | 59.4%  (residuos 0: 60.0%)
+tcp.seq (flujo: último seq+carga)     45400       | 859244     | 328044 | 61.8%  (residuos 0: 79.4%)
+tcp.ack (flujo: último ack)           45400       | 717396     | 440844 | 38.5%  (residuos 0: 60.1%)

@@ -1,0 +1,19 @@
+Lote B: 10/clase, N=65536, presupuesto 8000 ms, generalización en TODOS los índices de [N, 2^20). hashes compose=6a2f9a76 ast=48e3ef99 probes=570dbdbf
+
+clase | composición                         | congelado(09) desc | sin composición desc | MOTOR desc/sobreaj/fallo | costo mediano vs brotli (aceptadas) | ms med | rutas
+B1    | afín8∘poly                          |                  0 |                    0 |                   10/0/0 |                         117 vs 2184 |    100 | baff>poly×10
+B2    | bitperm∘poly                        |                  0 |                    0 |                    9/0/1 |                         117 vs 1552 |     97 | baff>poly×9
+B3    | poly∘selección-de-bits(n)           |                  0 |                    0 |                   0/0/10 |                                   — |     20 | 
+B4    | poly∘afín(n)                        |                  0 |                    0 |                   10/0/0 |                        199 vs 20080 |   1213 | idxq>idxlift>poly×6 idxq>literal×2 idxq>adelta>il2>(literal|gf2)×1 idxq>xdelta>il2>(literal|anf)×1
+B5    | afín8∘beatty                        |                  0 |                    0 |                    1/0/9 |                          99 vs 2408 |   1285 | baff>poly×1
+B6    | rotl∘gf2                            |                 10 |                   10 |                   10/0/0 |                        145 vs 11776 |     14 | gf2×10
+B7    | mulo∘poly                           |                 10 |                   10 |                   10/0/0 |                          41 vs 2184 |      1 | poly×10
+B8    | xorc∘afín8∘poly                     |                  0 |                    0 |                   10/0/0 |                         117 vs 2152 |     90 | baff>poly×10
+B9    | afín8∘poly∘selección-de-bits(n)     |                  0 |                    0 |                   0/0/10 |                                   — |     21 | 
+B10   | xor(beatty,poly)                    |                  0 |                    0 |                   0/0/10 |                                   — |    741 | 
+B11   | add(beatty,poly)                    |                  4 |                    7 |                    7/0/3 |                          91 vs 4272 |   1180 | poly×4 il2>(idxq>il2>(poly|poly)|idxq>il2>(poly×1 il2>(il2>(il2>(beatty|beatty)|il2>(beatt×1 il2>(idxq>anf|idxq>il2>(poly|poly))×1
+B12   | poly∘beatty                         |                  4 |                    4 |                    3/0/7 |                         820 vs 3920 |   1462 | il2>(il2>(il2>(poly|poly)|il2>(poly|poly×2 poly×1
+B13   | ANF∘selección-de-bits               |                 10 |                   10 |                   10/0/0 |                        823 vs 26360 |     20 | anf×10
+B14   | prefijo-xor∘afín8∘poly              |                  0 |                    0 |                   10/0/0 |                         122 vs 2144 |    120 | xdelta>baff>poly×10
+
+TOTAL: descubiertas 90/140, sobreajustes 0, fallos 50

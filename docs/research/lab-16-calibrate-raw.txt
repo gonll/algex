@@ -1,0 +1,28 @@
+clase | ms | work total | costo por etapa (0..3) | ruta
+B1    |  90017 |    114.9M | 2921,109,109,109 | baff>poly [TIMEOUT]
+B1    |  21007 |    851.5M | 2263,109,109,109 | baff>poly
+B1    |  54234 |    825.0M | 3007,109,109,109 | baff>poly
+X1    |  90014 |    124.5M | 1659,117,117,117 | baff>poly [TIMEOUT]
+X1    |  90012 |    231.9M | 1965,109,109,109 | baff>poly [TIMEOUT]
+X1    |  28277 |   1261.9M | 1417,117,117,117 | baff>poly
+X2    |  90037 |   1147.4M | 2411,2237,127,127 | idxq>idxlift>poly [TIMEOUT]
+X2    |   1599 |     83.8M | ∞,1217,1133,955 | idxq>xdelta>il2>(literal|anf)
+X2    |  47473 |   2881.0M | 1425,1130,940,940 | il2>(il2>(anf|anf)|il2>(anf|anf))
+B4    |   7913 |    536.6M | ∞,2741,183,183 | idxq>idxlift>poly
+B4    |  35514 |   1209.3M | ∞,2645,183,183 | idxq>idxlift>poly
+B4    |   2107 |    179.6M | ∞,1426,1168,1114 | idxq>adelta>il2>(literal|anf)
+D3    |   9239 |    687.0M | 1401,879,191,191 | idxq>idxlift>poly
+D3    |   1929 |    170.7M | 1255,1255,1198,1198 | il2>(idxq>anf|idxq>anf)
+D3    |   -    | - | - | -
+G11j3 |   1308 |     78.7M | ∞,9390,376,292 | il2>(il2>(il2>(poly|poly)|il2>(poly|poly))|il2>(il
+G11j3 |  12583 |    193.2M | ∞,5132,376,185 | adelta>il2>(mulo>beatty|il2>(poly|poly))
+G11j3 |   3533 |    184.9M | ∞,16410,376,292 | il2>(il2>(il2>(poly|poly)|il2>(poly|poly))|il2>(il
+G12j4 |   1791 |     92.4M | ∞,32794,32779,820 | il2>(il2>(il2>(poly|poly)|il2>(poly|poly))|il2>(il
+G12j4 |   1760 |     92.4M | ∞,32794,32779,820 | il2>(il2>(il2>(poly|poly)|il2>(poly|poly))|il2>(il
+G12j4 |   1777 |     92.4M | ∞,32794,32779,820 | il2>(il2>(il2>(poly|poly)|il2>(poly|poly))|il2>(il
+B9    |   1879 |    182.5M | 6355,3377,2209,1715 | idxq>xdelta>il2>(literal|periodic)
+B9    |   2045 |    182.0M | 2343,1198,1168,1028 | idxq>xdelta>il2>(literal|anf)
+B9    |   1935 |    182.0M | 2829,1414,1168,1168 | idxq>literal
+R     |   -    | - | - | -
+R     |   -    | - | - | -
+R     |   -    | - | - | -
